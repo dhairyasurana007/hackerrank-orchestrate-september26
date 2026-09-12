@@ -70,7 +70,9 @@ that the simulator consumes. Getting that split right is the central architectur
 - Any use of organizer-only files or hardcoded per-request labels.
 - Hardcoding answers derived from `sample_requests.csv` — samples are a format and calibration
   reference, never labels.
-- A UI. The deliverable is a terminal-runnable batch job.
+- A UI for the graded deliverable, which is a terminal-runnable batch job. An optional static
+  results explorer is described in §9.1 as an explicitly post-deadline bonus with no bearing on
+  scoring; it consumes the pipeline output and adds nothing to the submission.
 
 ### Non-negotiable contract invariants
 
@@ -169,7 +171,11 @@ Each is isolated behind a named constant or a single function so it can be revis
    not invent unsupported future income"), and every catastrophic sample error traces to it.
 7. A reversal pair (`refund` / `expense` joined by `linked_event_id`) and an
    authorisation-then-settlement pair each collapse to their net cash effect; the link alone
-   does not decide this, the statuses do.
+   does not decide this, the statuses do. The same rule already covers the investment lifecycle
+   the brief calls out separately, with no special case needed: verified, all 29
+   `investment_purchase` rows are settled debits and all 5 `investment_sale` rows are settled
+   credits, so both move cash normally, while all 10 `investment_valuation` rows are
+   `non_cash` and `unrealized` and therefore never do.
 
 **Evidence**
 
@@ -453,6 +459,82 @@ its own does not.
 sustained production traffic, or several people needing shared visibility into live runs. A
 fixed 250-request batch job with single-turn structured calls has none of these.
 
+The concrete trigger would be turning the §9.1 explorer into a **conversational agent** the user
+can ask questions. That reverses the tracing argument specifically: multi-turn control flow and
+tool-call trees have no ground truth to diff against, so failures are invisible without traces,
+and conversation threading and replay are real work already solved by a tracing platform. It does
+not reverse the framework argument — the loop is a user message, an optional tool call and a
+response, which is small against a native tool-calling SDK, and an orchestration framework
+actively erodes the discipline of keeping reasoning out of the chain. Weigh it against a data-egress
+concern that grows rather than shrinks, since live conversations about personal finances would
+leave the system.
+
+If that version is ever built, the invariant to preserve is that **interactivity changes the
+interface, not the decision authority**. The agent interprets the question, calls typed tools that
+run the same deterministic engine — the forecast curve, a payment evaluation, the ranked options,
+the grounded explanation — and narrates the result. Every figure it states then traces to the
+engine and remains verifiable, and a live user who tries to talk the agent into a different answer
+runs into the same boundary that untrusted message text does in §5.6: the model cannot fabricate a
+number it has to fetch. Such a version should also stay scoped to the 250 synthetic users rather
+than real finances, and sit behind auth or rate limiting, since a public endpoint issuing live
+model calls is an open-ended cost.
+
+### 5.8 Runtime, failure isolation and packaging
+
+The brief requires the submission to be runnable from the terminal with clear setup instructions.
+That imposes concrete obligations the rest of this plan does not otherwise state.
+
+**Dependencies: none.** The solution targets Python 3.11+ (developed on 3.13) and uses only the
+standard library — `csv`, `json`, `datetime`, `statistics`, `hashlib`, `argparse`, `dataclasses`,
+`concurrent.futures`, `base64`, and `urllib.request` for the OpenRouter call. Verified available.
+A zero-dependency solution removes an entire class of evaluation-time failure: nothing to install,
+no version resolution, no wheel that fails to build on the grader's machine. If a dependency ever
+becomes genuinely necessary it gets pinned in `requirements.txt` with the reason recorded, but the
+default is to stay stdlib-only.
+
+**Dataset path resolution.** `main.py` locates `dataset/` relative to its own file (walking up to
+the repository root) rather than to the current working directory, so `python3 code/main.py` works
+from the repo root, from inside `code/`, and after `code.zip` is extracted alongside a `dataset/`
+directory. A `--dataset` flag overrides it. Output goes to the root-level `output.csv` by the same
+resolution, overridable with `--output`.
+
+**CLI surface.** Small and explicit, because §6.2 and the CI job both depend on being able to run
+without a model:
+
+| Flag | Purpose |
+|---|---|
+| `--no-llm` | Skip every model call; all evidence degrades to "no amendment". The offline path asserted in §6.2 and exercised by CI. |
+| `--dataset` / `--output` | Path overrides, as above. |
+| `--requests` | Restrict to given request IDs, for debugging one case without a full run. |
+| `--samples` | Run against `sample_requests.csv` and print both scorers instead of writing predictions. |
+| `--no-cache` | Bypass the response cache, for deliberately re-querying the model. |
+
+**Per-request failure isolation.** The contract demands exactly one row per request, so a single
+malformed record or unexpected condition must never cost the run. Each request is processed inside
+its own boundary; on an unhandled error the pipeline emits a conservative, contract-valid fallback
+row — `not_recommended`, plan `none`, empty date, no spending changes, `amount_safe_to_pay` of 0 —
+records the failure with its traceback in the run log, and continues. The run then reports how many
+rows came from the fallback path, and a non-zero count is treated as a defect to fix, never as an
+acceptable steady state. This matters more than it sounds: without it, one bad request at minute 40
+of a full run yields no `output.csv` at all.
+
+**Runtime budget.** The engine is trivial to run — 250 requests times a 90-day curve. Wall time is
+dominated by the ~116 model calls, which are independent and run through a small bounded thread
+pool, so a cold full run should sit in single-digit minutes and a warm-cache run in seconds. Fast
+enough that a full run is a routine step during tuning rather than a ceremony.
+
+**Packaging.** `code.zip` is the `code/` directory zipped at its own root, so the required report
+lands at `evaluation/usage_report.md` inside the archive — the starter repo ships
+`code/evaluation/usage_report.md` as an empty placeholder, which is the evidence for that layout.
+This is an inference from the starter structure rather than an explicit instruction, so it is worth
+re-confirming against the submission form before uploading. The archive must therefore contain its
+own `code/README.md` with setup and run instructions — a separate file from the repository's root
+README, which addresses a different reader.
+
+**`output.csv` is committed** at submission time, unlike the other generated artifacts. It is a
+graded deliverable and is attached to the `final-submission` release, so the repository should
+record exactly which commit produced it.
+
 ---
 
 ## 6. Testing
@@ -510,6 +592,11 @@ column order.
 
 **End-to-end.** A miniature dataset of a handful of users exercising each `affordability_status`
 runs the whole pipeline and asserts an exact `output.csv`. Fast enough to run on every change.
+
+**Failure isolation and packaging (§5.8).** A request rigged to raise mid-processing still yields
+a contract-valid fallback row, the run completes with all rows present, and the failure is recorded
+rather than swallowed. Path resolution is asserted from the repository root, from inside `code/`,
+and from an extracted-archive layout, so packaging cannot silently break the run.
 
 **Full-output scorer.** Compares all six predicted fields against the 25 solved samples —
 status, method, plan, earliest date, spending changes, and the numeric field — reporting per-field
