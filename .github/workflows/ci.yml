@@ -66,7 +66,17 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ env.PYTHON_VERSION }}
-      - name: Run the pipeline with the model layer live
+      # Re-confirm the pinned model ids before spending anything on them. Needs no key.
+      - name: Confirm the pinned models against OpenRouter's live list
+        run: python code/scripts/confirm_models.py
+      # Samples first: 25 requests, which surfaces a provider or schema problem before the
+      # full run rather than after it. Prints both scorers, so the live figures are readable
+      # in the job log and comparable to the recorded offline baseline.
+      - name: Score the solved samples with the model layer live
+        env:
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+        run: python code/main.py --samples
+      - name: Run the full pipeline with the model layer live
         env:
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
         run: python code/main.py
@@ -74,9 +84,15 @@ jobs:
         run: >-
           python code/evaluation/check_output.py output.csv --rows 250
           --validate --no-fallback-rows
+      - name: Show the usage report
+        run: cat code/evaluation/usage_report.md
       - uses: actions/upload-artifact@v4
         with:
-          name: scored-output
+          name: scored-run
+          # The run log carries prompt hashes and token counts, never prompt text, so it is
+          # safe to publish as an artifact alongside the report built from it.
           path: |
             output.csv
+            output.csv.run.json
             code/evaluation/usage_report.md
+            code/evaluation/model_run_log.jsonl
