@@ -4,3 +4,4 @@ log.txt
 __pycache__/
 *.pyc
 code.zip
+output.csv.run.json

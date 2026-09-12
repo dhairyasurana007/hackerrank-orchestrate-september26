@@ -83,6 +83,19 @@ class OutputRow:
         }
 
 
+def placeholder_row(request_id: str) -> OutputRow:
+    """A contract-valid row with no engine behind it yet (scaffolding).
+
+    Deliberately *not* :func:`fallback_row` — that one marks the failure-isolation path,
+    which CI asserts from M13 is never taken. Keeping the two distinct is what makes that
+    assertion meaningful.
+    """
+    return OutputRow(
+        request_id=request_id,
+        decision_explanation="No recommendation computed yet (scaffolding).",
+    )
+
+
 def fallback_row(request_id: str, explanation: str = "") -> OutputRow:
     """The conservative, contract-valid row used when a request cannot be processed."""
     return OutputRow(

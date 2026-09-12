@@ -1,0 +1,12 @@
+{
+  "comment": "Owned by M4, enforced by CI from M12 - the first point at which the writer can produce real rows to score. Floors ratchet down as accuracy improves, never up to accommodate a regression.",
+  "min_accuracy": {
+    "amount_safe_to_pay": 0.0,
+    "affordability_status": 0.0,
+    "recommended_payment_method": 0.0,
+    "payment_plan": 0.0,
+    "earliest_date_for_full_payment": 0.0,
+    "spending_changes_needed": 0.0
+  },
+  "min_exact_rows": 0
+}

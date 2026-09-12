@@ -10,7 +10,6 @@ sitting beside a ``dataset/`` directory; see ``buyorwait.paths``.
 from __future__ import annotations
 
 import argparse
-import csv
 import sys
 from pathlib import Path
 
@@ -18,20 +17,10 @@ if __package__ in (None, ""):  # invoked as a script: make `buyorwait` importabl
     sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from buyorwait import paths  # noqa: E402
-from buyorwait.writer import OutputRow, write_output  # noqa: E402
-
-
-def placeholder_row(request_id: str) -> OutputRow:
-    """M0 scaffolding: a contract-valid row with no engine behind it yet.
-
-    Deliberately *not* ``writer.fallback_row`` — that one marks the failure-isolation path
-    (M13), which CI later asserts is never taken. Keeping the two distinct is what makes
-    that assertion meaningful.
-    """
-    return OutputRow(
-        request_id=request_id,
-        decision_explanation="No recommendation computed yet (scaffolding).",
-    )
+from buyorwait.loaders import load_dataset  # noqa: E402
+from buyorwait.pipeline import Engine, run  # noqa: E402
+from buyorwait.writer import write_output  # noqa: E402
+from evaluation import full_output  # noqa: E402
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -51,33 +40,44 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def read_request_ids(dataset: Path, samples: bool) -> list[str]:
-    name = "sample_requests.csv" if samples else "requests.csv"
-    with (dataset / name).open(newline="", encoding="utf-8") as handle:
-        return [row["request_id"] for row in csv.DictReader(handle)]
-
-
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     dataset = paths.find_dataset(args.dataset)
     output = Path(args.output) if args.output else paths.default_output(dataset)
 
-    request_ids = read_request_ids(dataset, args.samples)
+    data = load_dataset(dataset)
+    requests = data.samples if args.samples else data.requests
     if args.requests:
         wanted = {rid.strip() for rid in args.requests.split(",") if rid.strip()}
-        request_ids = [rid for rid in request_ids if rid in wanted]
+        requests = tuple(r for r in requests if r.request_id in wanted)
 
-    rows = [placeholder_row(rid) for rid in request_ids]
+    engine = Engine.build(data, use_llm=not args.no_llm)
+    report = run(engine, requests)
 
     if args.samples:
         # --samples prints scores; it never writes predictions, so a scoring run can never
         # leave a 25-row output.csv behind where a 250-row one is expected.
-        print(f"scored {len(rows)} samples (no scorer wired yet)")
-        return 0
+        return score_samples(report, data)
 
-    written = write_output(output, rows)
+    written = write_output(output, report.rows)
+    report.write_summary(output)
     print(f"wrote {written} rows to {output}")
+    if report.fallback_rows:
+        print(f"WARNING: {report.fallback_rows} row(s) came from the failure-isolation fallback")
+        for failure in report.failures[:5]:
+            print(f"  {failure['request_id']}: {failure['error']}")
     return 0
+
+
+def score_samples(report, data) -> int:
+    """Print both scorers. Recorded thresholds decide the exit code."""
+    predicted = {row.request_id: row.as_csv_dict() for row in report.rows}
+    full = full_output.score(predicted, data.sample_truth)
+    print(full.render())
+    failures = full_output.check_thresholds(full)
+    for failure in failures:
+        print(f"FAIL: full-output {failure}")
+    return 1 if failures else 0
 
 
 if __name__ == "__main__":
