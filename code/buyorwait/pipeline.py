@@ -9,13 +9,14 @@ non-zero count is a defect to fix rather than an acceptable steady state.
 
 from __future__ import annotations
 
+import dataclasses
 import datetime as dt
 import json
 import traceback
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from . import evidence, forecast, planner, recurrence, spending
+from . import evidence, explain, forecast, planner, recurrence, spending
 from .fx import RateTable
 from .loaders import Dataset
 from .model.client import ModelClient
@@ -158,6 +159,7 @@ class Engine:
     def decide(self, request: Request) -> OutputRow:
         """Decide one request end to end."""
         decision = self.decision_for(request)
+        profile = self.data.profiles[request.user_id]
         return OutputRow(
             request_id=request.request_id,
             amount_safe_to_pay=decision.amount_safe_to_pay,
@@ -166,7 +168,7 @@ class Engine:
             payment_plan=decision.chosen.payments,
             earliest_date_for_full_payment=decision.emitted_earliest,
             spending_changes_needed=decision.chosen.spending_changes,
-            decision_explanation="",
+            decision_explanation=explain.render(decision, request, profile),
         )
 
     def decision_for(self, request: Request):
@@ -175,12 +177,19 @@ class Engine:
         def change_search(**kwargs):
             return spending.search(rates=self.rates, **kwargs)
 
-        return planner.decide(
+        decision = planner.decide(
             request=request,
             profile=profile,
             curve=self.curve_for(request),
             options=self.data.options(request.request_id),
             spending_change_search=change_search,
+        )
+        return dataclasses.replace(
+            decision,
+            changed_events=tuple(
+                self.data.events_by_id[change.split(":")[1]]
+                for change in decision.chosen.spending_changes
+            ),
         )
 
     def predicted_drawdown(self, request: Request) -> float:

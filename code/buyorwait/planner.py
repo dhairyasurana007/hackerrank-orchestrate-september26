@@ -93,6 +93,9 @@ class Decision:
     considered: tuple[Candidate, ...] = ()
     rejected: tuple[tuple[str, str], ...] = ()  # (what, why)
     curve: Curve | None = None
+    #: The events the chosen candidate's spending changes target, in the same order, so the
+    #: explanation can name them without re-deriving which event each action refers to.
+    changed_events: tuple = ()
     notes: list[str] = field(default_factory=list)
 
     @property
