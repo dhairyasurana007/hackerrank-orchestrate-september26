@@ -30,7 +30,22 @@ AMENDMENT_SCHEMA = {
             "items": {
                 "type": "object",
                 "additionalProperties": False,
-                "required": ["kind", "confidence", "message_id"],
+                # OpenAI strict structured output requires EVERY property to appear in
+                # `required`; optionality is expressed by a nullable type, not by omission.
+                # Listing only the three genuinely-mandatory fields here made the provider
+                # reject all 198 calls of the first live run with HTTP 400.
+                "required": [
+                    "kind",
+                    "message_id",
+                    "amount",
+                    "currency",
+                    "effective_date",
+                    "percent_change",
+                    "target_category",
+                    "target_description",
+                    "scope",
+                    "confidence",
+                ],
                 "properties": {
                     "kind": {"type": "string", "enum": list(KINDS)},
                     "message_id": {"type": "string"},

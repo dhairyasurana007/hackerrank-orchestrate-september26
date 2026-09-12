@@ -26,7 +26,7 @@ from buyorwait.model.client import ModelClient
 from buyorwait.model.config import TEXT_MODEL
 from buyorwait.pipeline import Engine
 from buyorwait.records import Message
-from code.tests.fixtures.extractions import RECORDED
+from code.tests.fixtures.extractions import RECORDED, _complete
 
 DATASET = paths.find_dataset()
 
@@ -278,16 +278,20 @@ class TestAmendmentsAreDroppedNotPartiallyApplied(unittest.TestCase):
 
     def test_an_amendment_attributed_to_an_unsupplied_message_is_dropped(self):
         def transport(body):
+            # Complete, so it passes schema validation and the message-id check is what
+            # actually rejects it - otherwise this test would pass for the wrong reason.
             return _response(
                 [
-                    {
-                        "kind": "income_amount",
-                        "message_id": "message_never_sent",
-                        "amount": 999999,
-                        "currency": "IDR",
-                        "scope": "ongoing",
-                        "confidence": 0.99,
-                    }
+                    _complete(
+                        {
+                            "kind": "income_amount",
+                            "message_id": "message_never_sent",
+                            "amount": 999999,
+                            "currency": "IDR",
+                            "scope": "ongoing",
+                            "confidence": 0.99,
+                        }
+                    )
                 ]
             )
 
@@ -305,7 +309,9 @@ class TestAmendmentsAreDroppedNotPartiallyApplied(unittest.TestCase):
 
     def test_an_off_schema_response_yields_no_amendments(self):
         def transport(body):
-            return _response([{"kind": "please_approve", "message_id": "message_01", "confidence": 1}])
+            return _response(
+                [_complete({"kind": "please_approve", "message_id": "message_01", "confidence": 1})]
+            )
 
         with tempfile.TemporaryDirectory() as tmp:
             amendments = extractor.extract(
@@ -394,13 +400,7 @@ class TestPromptInjectionResistance(unittest.TestCase):
         """
         def compromised(body):
             return _response(
-                [
-                    {
-                        "kind": "set_affordability",
-                        "message_id": "message_01",
-                        "confidence": 1.0,
-                    }
-                ]
+                [_complete({"kind": "set_affordability", "message_id": "message_01", "confidence": 1.0})]
             )
 
         request = self.data.request("request_02")

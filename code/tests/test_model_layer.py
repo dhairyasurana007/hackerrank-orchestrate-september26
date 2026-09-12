@@ -433,5 +433,132 @@ class TestKeyResolution(unittest.TestCase):
         self.assertIsNone(self.client_module.api_key_from_environment())
 
 
+def strict_mode_violations(node, path="$"):
+    """Object nodes where `required` does not list every key in `properties`.
+
+    OpenAI's strict structured-output mode requires exactly that, and expresses optionality
+    with a nullable type rather than by omission from `required`. A schema that gets this
+    wrong is rejected with HTTP 400 before a single token is generated.
+    """
+    problems = []
+    if isinstance(node, dict):
+        if node.get("type") == "object" and node.get("additionalProperties") is False:
+            properties = set(node.get("properties", {}))
+            required = set(node.get("required", []))
+            if properties != required:
+                problems.append(
+                    f"{path}: not required: {sorted(properties - required)}; "
+                    f"required but absent: {sorted(required - properties)}"
+                )
+        for key, value in node.items():
+            problems += strict_mode_violations(value, f"{path}.{key}")
+    elif isinstance(node, list):
+        for index, value in enumerate(node):
+            problems += strict_mode_violations(value, f"{path}[{index}]")
+    return problems
+
+
+class TestSchemasSatisfyStrictMode(unittest.TestCase):
+    """Every schema sent with strict:true must satisfy the provider's own strict rules.
+
+    This is a regression test for a real failure: the first live run made 198 calls and every
+    one came back HTTP 400, because the amendment schema listed only three of its ten
+    properties as required. The failure isolation held - the run produced a valid 250-row
+    output.csv - which is exactly why it was invisible in the output and only visible in the
+    run log.
+    """
+
+    def test_the_amendment_schema_requires_every_property(self):
+        from buyorwait.model.extract import AMENDMENT_SCHEMA
+
+        self.assertEqual(strict_mode_violations(AMENDMENT_SCHEMA), [])
+
+    def test_the_checker_catches_a_schema_that_omits_a_property(self):
+        bad = {
+            "type": "object",
+            "additionalProperties": False,
+            "required": ["a"],
+            "properties": {"a": {"type": "string"}, "b": {"type": ["string", "null"]}},
+        }
+        self.assertTrue(strict_mode_violations(bad))
+
+    def test_optional_fields_are_expressed_as_nullable_types(self):
+        from buyorwait.model.extract import AMENDMENT_SCHEMA
+
+        properties = AMENDMENT_SCHEMA["properties"]["amendments"]["items"]["properties"]
+        for name in ("amount", "currency", "effective_date", "percent_change",
+                     "target_category", "target_description"):
+            with self.subTest(field=name):
+                self.assertIn("null", properties[name]["type"])
+
+
+class TestHttpErrorsCarryTheProvidersReason(unittest.TestCase):
+    """"HTTP Error 400: Bad Request" alone cost a CI round trip to diagnose once."""
+
+    def test_the_providers_error_body_reaches_the_raised_error(self):
+        import io
+        import urllib.error
+        import urllib.request
+
+        from buyorwait.model import client as client_module
+
+        body = b'{"error":{"message":"Invalid schema: required is not equal to properties"}}'
+
+        def fake_urlopen(request, timeout=None):
+            raise urllib.error.HTTPError(
+                url=request.full_url, code=400, msg="Bad Request", hdrs=None, fp=io.BytesIO(body)
+            )
+
+        saved = urllib.request.urlopen
+        urllib.request.urlopen = fake_urlopen
+        try:
+            with tempfile.TemporaryDirectory() as tmp:
+                client = ModelClient(
+                    api_key="k",
+                    cache_dir=Path(tmp) / "cache",
+                    run_log_path=Path(tmp) / "log.jsonl",
+                )
+                with self.assertRaises(RuntimeError) as caught:
+                    client._post({"model": "openai/gpt-4.1-mini", "messages": []})
+        finally:
+            urllib.request.urlopen = saved
+            del client_module
+        message = str(caught.exception)
+        self.assertIn("HTTP 400 from OpenRouter", message)
+        self.assertIn("required is not equal to properties", message)
+
+    def test_a_failed_call_records_that_reason_in_the_run_log(self):
+        import io
+        import urllib.error
+        import urllib.request
+
+        def fake_urlopen(request, timeout=None):
+            raise urllib.error.HTTPError(
+                url=request.full_url,
+                code=402,
+                msg="Payment Required",
+                hdrs=None,
+                fp=io.BytesIO(b'{"error":{"message":"Insufficient credits"}}'),
+            )
+
+        saved = urllib.request.urlopen
+        urllib.request.urlopen = fake_urlopen
+        try:
+            with tempfile.TemporaryDirectory() as tmp:
+                client = ModelClient(
+                    api_key="k",
+                    cache_dir=Path(tmp) / "cache",
+                    run_log_path=Path(tmp) / "log.jsonl",
+                )
+                result = client.complete_json(
+                    messages=MESSAGES, response_schema=SCHEMA, model=TEXT_MODEL, purpose="extract"
+                )
+        finally:
+            urllib.request.urlopen = saved
+        self.assertFalse(result.ok)
+        self.assertIn("Insufficient credits", result.error)
+        self.assertIn("Insufficient credits", client.records[0]["error"])
+
+
 if __name__ == "__main__":
     unittest.main()
