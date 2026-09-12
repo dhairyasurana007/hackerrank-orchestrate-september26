@@ -15,12 +15,14 @@ import traceback
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from . import forecast, planner, spending
+from . import evidence, forecast, planner, recurrence, spending
 from .fx import RateTable
 from .loaders import Dataset
+from .model.client import ModelClient
+from .model.extract import apply_to_series, extract
 from .records import Request
 from .state import UserState, build_state
-from .writer import OutputRow, fallback_row, placeholder_row
+from .writer import OutputRow, fallback_row
 
 
 @dataclass
@@ -59,10 +61,21 @@ class Engine:
     data: Dataset
     rates: RateTable
     use_llm: bool = False
+    client: ModelClient | None = None
+    amendment_log: list = field(default_factory=list)
 
     @classmethod
-    def build(cls, data: Dataset, *, use_llm: bool = False) -> "Engine":
-        return cls(data=data, rates=RateTable(data.rates), use_llm=use_llm)
+    def build(
+        cls,
+        data: Dataset,
+        *,
+        use_llm: bool = False,
+        client: ModelClient | None = None,
+        use_cache: bool = True,
+    ) -> "Engine":
+        if use_llm and client is None:
+            client = ModelClient(use_cache=use_cache)
+        return cls(data=data, rates=RateTable(data.rates), use_llm=use_llm, client=client)
 
     def state_for(self, request: Request) -> UserState:
         return build_state(
@@ -72,8 +85,66 @@ class Engine:
             self.rates,
         )
 
+    def amendments_for(self, request: Request):
+        """Validated amendments for one request, or () on the offline path."""
+        if not (self.use_llm and self.client is not None and self.client.available):
+            return ()
+        state = self.state_for(request)
+        purpose = f"message-extraction:{request.request_id}"
+
+        def note(reason, amendment):
+            self.client.note_dropped(
+                purpose, reason, {"kind": amendment.kind, "message_id": amendment.message_id}
+            )
+
+        raw = extract(
+            request=request,
+            profile=state.profile,
+            messages=self.data.messages(request.user_id),
+            events=state.events,
+            client=self.client,
+        )
+        kept = []
+        for amendment in raw:
+            if evidence.validate(amendment, request=request, events=state.events, note=note) is None:
+                kept.append(amendment)
+        if kept:
+            self.amendment_log.append((request.request_id, tuple(kept)))
+        return tuple(kept)
+
     def curve_for(self, request: Request):
         state = self.state_for(request)
+        series = recurrence.detect(
+            state.events, as_of=request.request_date, amounts=state.amounts
+        )
+        explicit = forecast.build_explicit(
+            request=request,
+            profile=state.profile,
+            events=state.events,
+            rates=self.rates,
+            events_by_id=state.events_by_id,
+            amounts=state.amounts,
+        )
+        series = series + recurrence.confirmed_income_series(
+            explicit.explicit, series, as_of=request.request_date
+        )
+        amendments = self.amendments_for(request)
+        if amendments:
+            purpose = f"message-extraction:{request.request_id}"
+
+            def note(reason, amendment):
+                self.client.note_dropped(
+                    purpose, reason, {"kind": amendment.kind, "message_id": amendment.message_id}
+                )
+
+            series = apply_to_series(
+                series,
+                amendments,
+                request=request,
+                profile=state.profile,
+                rates=self.rates,
+                note=note,
+            )
         return forecast.build(
             request=request,
             profile=state.profile,
@@ -81,6 +152,7 @@ class Engine:
             rates=self.rates,
             events_by_id=state.events_by_id,
             amounts=state.amounts,
+            series=series,
         )
 
     def decide(self, request: Request) -> OutputRow:

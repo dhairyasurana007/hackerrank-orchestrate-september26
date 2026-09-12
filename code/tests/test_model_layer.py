@@ -327,7 +327,7 @@ class TestRunLogAndAccounting(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             client = _client(tmp, lambda body: _response({"amendments": []}))
             client.note_dropped("extract", "references a nonexistent event", {"event_id": "event_x"})
-            self.assertEqual(client.records[0]["kind"], "dropped")
+            self.assertEqual(client.records[0]["record"], "dropped")
             self.assertIn("nonexistent", client.records[0]["reason"])
 
     def test_flushing_an_empty_log_writes_nothing(self):

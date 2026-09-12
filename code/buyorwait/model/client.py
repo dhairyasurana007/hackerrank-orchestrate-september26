@@ -191,9 +191,11 @@ class ModelClient:
         Dropped amendments are the most useful thing in the log: a wrong answer is usually a
         dropped amendment that should have been kept, or a kept one that should not have been.
         """
+        # The discriminator is `record`, not `kind`: a dropped amendment's detail carries
+        # its own `kind` and would otherwise overwrite it.
         self.records.append(
             {
-                "kind": "dropped",
+                "record": "dropped",
                 "purpose": purpose,
                 "reason": reason,
                 **(detail or {}),
@@ -300,7 +302,7 @@ class ModelClient:
         )
         self.records.append(
             {
-                "kind": "call",
+                "record": "call",
                 "purpose": purpose,
                 # The prompt hash, never the prompt: the log is safe to ship, and the cache
                 # already holds the full text for debugging.

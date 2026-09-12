@@ -367,6 +367,9 @@ def occurrences_in_window(series: Series, start: dt.date, end: dt.date) -> tuple
     if not series.projects:
         return ()
     dates = []
+    if series.cadence == "one_off":
+        # A single dated exception, which is how a "next payment only" amendment is carried.
+        return (series.next_expected,) if start < series.next_expected <= end else ()
     if series.cadence == "monthly":
         current = _next_monthly(series.last_date, series.anchor_day or series.last_date.day)
         while current <= end:
