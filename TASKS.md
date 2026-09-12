@@ -201,9 +201,9 @@ nothing depends on them.
 | `main` | Shared foundations, then the FINAL implementation | `origin/main` | — |
 | `mvp` | The MVP implementation | `origin/mvp` (see below) | `main` at `866d972` |
 
-- **`mvp` exists locally but has never been pushed**, so `origin/mvp` does not exist yet and the
-  branch has no upstream. Its first push must be `git push -u origin mvp`; every push after that is
-  plain `git push`.
+- **`mvp` is pushed and tracking `origin/mvp`.** It was created from `main` and fast-forwarded to
+  `main`'s tip before its first push, so the two branches start identical and `mvp` carries no work
+  of its own yet. Every push from here is a plain `git push`.
 - `origin` → `https://github.com/dhairyasurana007/hackerrank-orchestrate-september26.git`
   — the submission repository, and the only branch target for every push in §3 and §4.
 - `upstream` → `https://github.com/interviewstreet/hackerrank-orchestrate-september26.git`
