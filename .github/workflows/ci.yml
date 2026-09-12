@@ -36,9 +36,10 @@ jobs:
           python-version: ${{ env.PYTHON_VERSION }}
       - name: Run the pipeline with no model layer
         run: python code/main.py --no-llm
-      # Staged assertions (TASKS.md 2.3): --validate lands at M11, --no-fallback-rows at M13.
+      # Staged assertions (TASKS.md 2.3): --validate enabled at M11; --no-fallback-rows
+      # lands at M13, which is where the fallback path itself comes into existence.
       - name: Check the output contract
-        run: python code/evaluation/check_output.py output.csv --rows 250
+        run: python code/evaluation/check_output.py output.csv --rows 250 --validate
 
   scorers:
     name: scorers
@@ -67,7 +68,7 @@ jobs:
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
         run: python code/main.py
       - name: Check the output contract
-        run: python code/evaluation/check_output.py output.csv --rows 250
+        run: python code/evaluation/check_output.py output.csv --rows 250 --validate
       - uses: actions/upload-artifact@v4
         with:
           name: scored-output
