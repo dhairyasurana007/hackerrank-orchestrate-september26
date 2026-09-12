@@ -159,6 +159,11 @@ def check_thresholds(report: DrawdownReport, thresholds: dict | None = None) -> 
         failures.append(
             f"median relative error {report.median_error:.2%} worse than the recorded {ceiling:.2%}"
         )
+    mean_ceiling = thresholds.get("max_mean_relative_error")
+    if mean_ceiling is not None and report.mean_error > mean_ceiling + 1e-9:
+        failures.append(
+            f"mean relative error {report.mean_error:.2%} worse than the recorded {mean_ceiling:.2%}"
+        )
     allowed = thresholds.get("max_bound_violations")
     if allowed is not None and len(report.bound_violations) > allowed:
         failures.append(

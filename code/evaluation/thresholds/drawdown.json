@@ -1,6 +1,6 @@
 {
   "comment": "Owned by M5b. Forecast-curve accuracy, distinct from thresholds/full_output.json. The ceiling ratchets DOWN when a change is accepted and is never raised to accommodate a regression.",
-  "max_median_relative_error": 1.0,
+  "max_median_relative_error": 0.148,
   "max_bound_violations": 0,
   "history": [
     {
@@ -13,9 +13,20 @@
       "task": "M7a",
       "forecaster": "build_explicit (explicit future events only, no recurrence projection)",
       "median_relative_error": 1.0,
-      "mean_relative_error": 0.9424,
-      "note": "The explicit-only baseline. The median is unchanged from the zero forecaster because 15 of the 25 samples - and 14 of the 21 exact ones - have no explicit future events at all, so their curve is flat and their drawdown is zero by construction. The mean moves from 100% to 94.2%, which is the whole contribution of every pending debit and scheduled row in the dataset. That gap is the measured size of the projection job M7b has to do: on most samples, all of it."
+      "mean_relative_error": 0.9421,
+      "note": "The explicit-only baseline. The median is unchanged from the zero forecaster because 15 of the 25 samples - and 14 of the 21 exact ones - have no explicit future events at all, so their curve is flat and their drawdown is zero by construction. The mean moves from 100% to 94.21%, which is the whole contribution of every pending debit and scheduled row in the dataset. That gap is the measured size of the projection job M7b has to do: on most samples, all of it."
+    },
+    {
+      "task": "M7b",
+      "forecaster": "build (explicit events + recurring projection, safety horizon at desired_completion_date)",
+      "median_relative_error": 0.148,
+      "mean_relative_error": 0.3209,
+      "within_10pct": 7,
+      "within_25pct": 15,
+      "bound_violations": 0,
+      "note": "Three changes, each measured separately. Projection alone: median 100% -> 16.4%. De-duplicating a projected occurrence against the explicit scheduled row that already covers it, keyed on (direction, category) rather than on description: 16.4% -> 14.8%, almost all of it request_13, whose scheduled salary is described differently from the history it continues. Seeding a monthly series from a scheduled credit with no detectable history (PLAN assumption 4): fixed request_01's upper-bound violation, 31,418 predicted against a 15,225 bound, down to 10,209. Measuring the trough through desired_completion_date instead of the full 90-day window: mean 67.6% -> 32.1% and the last bound violation gone; the median did not move, which is what says it is a tail correction and not a re-fit."
     }
   ],
-  "rejected_variants": []
+  "rejected_variants": [],
+  "max_mean_relative_error": 0.321
 }

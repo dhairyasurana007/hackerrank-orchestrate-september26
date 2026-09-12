@@ -74,7 +74,7 @@ class Engine:
 
     def curve_for(self, request: Request):
         state = self.state_for(request)
-        return forecast.build_explicit(
+        return forecast.build(
             request=request,
             profile=state.profile,
             events=state.events,
@@ -90,9 +90,10 @@ class Engine:
     def predicted_drawdown(self, request: Request) -> float:
         """Depth of the forecast curve's trough below the opening balance.
 
-        The one figure the drawdown harness grades.
+        The one figure the drawdown harness grades, measured through the request's own
+        deadline — the safety horizon, not the full 90-day curve (see forecast.py).
         """
-        return self.curve_for(request).drawdown()
+        return self.curve_for(request).drawdown(through=request.desired_completion_date)
 
 
 def run(engine: Engine, requests) -> RunReport:

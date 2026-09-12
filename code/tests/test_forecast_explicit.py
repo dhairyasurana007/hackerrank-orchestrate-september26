@@ -219,15 +219,21 @@ class TestAgainstTheRealDataset(unittest.TestCase):
                 self.assertEqual(curve.values[0], self.data.profiles[request.user_id].current_available_balance)
 
     def test_the_recorded_explicit_only_baseline_still_holds(self):
-        """The number M5b reports for this forecaster, committed so later work is comparable."""
+        """M5b's number for *this* forecaster, kept in the suite so later work stays comparable.
+
+        Graded on build_explicit directly rather than through the Engine: the Engine moved on
+        to the projected curve at M7b, while the claim this test makes is about the
+        explicit-only forecaster, which still exists and must keep reporting the figure the
+        threshold file records against it.
+        """
         from evaluation import drawdown
 
-        from buyorwait.pipeline import Engine
+        def forecaster(request):
+            return self._curve_for(request).drawdown(through=request.desired_completion_date)
 
-        engine = Engine.build(self.data, use_llm=False)
-        report = drawdown.grade(engine.predicted_drawdown, self.data)
+        report = drawdown.grade(forecaster, self.data)
         self.assertAlmostEqual(report.median_error, 1.0, places=4)
-        self.assertAlmostEqual(report.mean_error, 0.9424, places=3)
+        self.assertAlmostEqual(report.mean_error, 0.9421, places=3)
         self.assertEqual(report.bound_violations, [])
 
 

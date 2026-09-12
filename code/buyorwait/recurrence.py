@@ -333,3 +333,50 @@ def occurrences_in_window(series: Series, start: dt.date, end: dt.date) -> tuple
                 dates.append(current)
             current = current + dt.timedelta(days=series.interval_days)
     return tuple(dates)
+
+
+def confirmed_income_series(movements, detected, *, as_of: dt.date) -> tuple[Series, ...]:
+    """Seed a monthly series from a ``scheduled`` credit that has no history to detect.
+
+    PLAN.md assumption 4: confirmed salary recurs monthly from its scheduled settlement date
+    at the same amount unless amended by evidence. This is the case where history alone says
+    nothing — user_01 has exactly one prior salary row, described "Prorated first salary",
+    and one scheduled row. Without this seeding the forecast injects income once and then
+    runs 75 days of pure expense, which over-forecast that sample's drawdown by 106% and
+    broke its upper bound. A `scheduled` row is affirmative confirmation from the source, so
+    it is the one place the engine may project income with no series behind it.
+
+    Seeded only where no detected series already projects for the same
+    ``(direction, category)``: user_13 has both a projecting salary series and a scheduled
+    row for it, and seeding there would double-count every month after the first.
+    """
+    covered = {(s.direction, s.category) for s in detected if s.projects and s.is_income}
+    seeded = []
+    for movement in movements:
+        event = movement.event
+        if event.status != "scheduled" or event.direction != "credit" or movement.amount <= 0:
+            continue
+        key = (event.direction, event.category)
+        if key in covered:
+            continue
+        covered.add(key)
+        anchor = movement.when.day
+        seeded.append(
+            Series(
+                key=("credit", event.category, normalise_description(event.description)),
+                direction="credit",
+                category=event.category,
+                description_key=normalise_description(event.description),
+                cadence="monthly",
+                interval_days=30,
+                anchor_day=anchor,
+                last_date=movement.when,
+                next_expected=_next_monthly(movement.when, anchor),
+                amount=movement.amount,
+                occurrences=1,
+                projects=True,
+                reason="confirmed by a scheduled row; recurs monthly from its settlement date",
+                representative=event,
+            )
+        )
+    return tuple(seeded)
