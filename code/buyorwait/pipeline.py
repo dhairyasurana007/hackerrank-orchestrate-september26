@@ -15,9 +15,11 @@ import traceback
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from . import forecast
 from .fx import RateTable
 from .loaders import Dataset
 from .records import Request
+from .state import UserState, build_state
 from .writer import OutputRow, fallback_row, placeholder_row
 
 
@@ -62,6 +64,25 @@ class Engine:
     def build(cls, data: Dataset, *, use_llm: bool = False) -> "Engine":
         return cls(data=data, rates=RateTable(data.rates), use_llm=use_llm)
 
+    def state_for(self, request: Request) -> UserState:
+        return build_state(
+            request,
+            self.data.profiles[request.user_id],
+            self.data.events(request.user_id),
+            self.rates,
+        )
+
+    def curve_for(self, request: Request):
+        state = self.state_for(request)
+        return forecast.build_explicit(
+            request=request,
+            profile=state.profile,
+            events=state.events,
+            rates=self.rates,
+            events_by_id=state.events_by_id,
+            amounts=state.amounts,
+        )
+
     def decide(self, request: Request) -> OutputRow:
         """Decide one request. Wired to the real engine at M12."""
         return placeholder_row(request.request_id)
@@ -69,10 +90,9 @@ class Engine:
     def predicted_drawdown(self, request: Request) -> float:
         """Depth of the forecast curve's trough below the opening balance.
 
-        The one figure the drawdown harness grades. Wired to the real forecaster at M7a;
-        until then it predicts no drawdown, which the recorded threshold reflects.
+        The one figure the drawdown harness grades.
         """
-        return 0.0
+        return self.curve_for(request).drawdown()
 
 
 def run(engine: Engine, requests) -> RunReport:

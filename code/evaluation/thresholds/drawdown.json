@@ -8,6 +8,13 @@
       "forecaster": "zero_forecaster",
       "median_relative_error": 1.0,
       "note": "The harness's own starting point: predicting no drawdown at all is 100% error on every exact sample. Recorded so the first real forecaster has something to beat."
+    },
+    {
+      "task": "M7a",
+      "forecaster": "build_explicit (explicit future events only, no recurrence projection)",
+      "median_relative_error": 1.0,
+      "mean_relative_error": 0.9424,
+      "note": "The explicit-only baseline. The median is unchanged from the zero forecaster because 15 of the 25 samples - and 14 of the 21 exact ones - have no explicit future events at all, so their curve is flat and their drawdown is zero by construction. The mean moves from 100% to 94.2%, which is the whole contribution of every pending debit and scheduled row in the dataset. That gap is the measured size of the projection job M7b has to do: on most samples, all of it."
     }
   ],
   "rejected_variants": []
