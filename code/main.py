@@ -21,7 +21,7 @@ from buyorwait.loaders import load_dataset  # noqa: E402
 from buyorwait.records import DatasetError  # noqa: E402
 from buyorwait.pipeline import Engine, run  # noqa: E402
 from buyorwait.writer import write_output  # noqa: E402
-from evaluation import drawdown, full_output  # noqa: E402
+from evaluation import drawdown, full_output, usage  # noqa: E402
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -78,12 +78,28 @@ def main(argv: list[str] | None = None) -> int:
 
     written = write_output(output, report.rows)
     report.write_summary(output)
+    write_usage_report(engine, len(requests), offline=args.no_llm)
     print(f"wrote {written} rows to {output}")
     if report.fallback_rows:
         print(f"WARNING: {report.fallback_rows} row(s) came from the failure-isolation fallback")
         for failure in report.failures[:5]:
             print(f"  {failure['request_id']}: {failure['error']}")
     return 0
+
+
+def write_usage_report(engine, request_count: int, *, offline: bool) -> None:
+    """Regenerate evaluation/usage_report.md from this run's model calls."""
+    records = list(engine.client.records) if engine.client is not None else []
+    if engine.client is not None:
+        engine.client.flush_run_log()
+    reason = None
+    if offline:
+        reason = "the run used --no-llm"
+    elif engine.client is None or not engine.client.available:
+        reason = "OPENROUTER_API_KEY is not set, so the model layer degraded to the offline path"
+    summary = usage.summarise(records, requests=request_count)
+    path = usage.write_report(summary, offline_reason=reason)
+    print(f"wrote the usage report to {path}")
 
 
 def score_samples(engine, report, data, detail: bool = False) -> int:
