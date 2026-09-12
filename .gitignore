@@ -6,3 +6,5 @@ __pycache__/
 code.zip
 output.csv.run.json
 code/evaluation/model_run_log.jsonl
+
+log.txt
