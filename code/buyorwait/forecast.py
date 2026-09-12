@@ -114,8 +114,11 @@ class Curve:
         minima = [0.0] * len(self.values)
         running = float("inf")
         for index in range(len(self.values) - 1, -1, -1):
-            running = self.values[index] if index > limit else min(running, self.values[index])
-            minima[index] = running
+            if index > limit:
+                minima[index] = self.values[index]
+            else:
+                running = min(running, self.values[index])
+                minima[index] = running
         return minima
 
     def shifted(self, payments) -> "Curve":
