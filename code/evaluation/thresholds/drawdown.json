@@ -1,0 +1,14 @@
+{
+  "comment": "Owned by M5b. Forecast-curve accuracy, distinct from thresholds/full_output.json. The ceiling ratchets DOWN when a change is accepted and is never raised to accommodate a regression.",
+  "max_median_relative_error": 1.0,
+  "max_bound_violations": 0,
+  "history": [
+    {
+      "task": "M5b",
+      "forecaster": "zero_forecaster",
+      "median_relative_error": 1.0,
+      "note": "The harness's own starting point: predicting no drawdown at all is 100% error on every exact sample. Recorded so the first real forecaster has something to beat."
+    }
+  ],
+  "rejected_variants": []
+}

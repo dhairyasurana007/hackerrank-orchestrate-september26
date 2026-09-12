@@ -20,7 +20,7 @@ from buyorwait import paths  # noqa: E402
 from buyorwait.loaders import load_dataset  # noqa: E402
 from buyorwait.pipeline import Engine, run  # noqa: E402
 from buyorwait.writer import write_output  # noqa: E402
-from evaluation import full_output  # noqa: E402
+from evaluation import drawdown, full_output  # noqa: E402
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -57,7 +57,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.samples:
         # --samples prints scores; it never writes predictions, so a scoring run can never
         # leave a 25-row output.csv behind where a 250-row one is expected.
-        return score_samples(report, data)
+        return score_samples(engine, report, data, detail=bool(args.requests))
 
     written = write_output(output, report.rows)
     report.write_summary(output)
@@ -69,15 +69,24 @@ def main(argv: list[str] | None = None) -> int:
     return 0
 
 
-def score_samples(report, data) -> int:
-    """Print both scorers. Recorded thresholds decide the exit code."""
+def score_samples(engine, report, data, detail: bool = False) -> int:
+    """Print both scorers. Recorded thresholds decide the exit code.
+
+    Two scorers, never one number: the forecast curve can be exact while the emitted row is
+    wrong, and vice versa.
+    """
+    curve_report = drawdown.grade(engine.predicted_drawdown, data)
+    print(curve_report.render(detail=detail))
+    curve_failures = [f"drawdown {failure}" for failure in drawdown.check_thresholds(curve_report)]
+
     predicted = {row.request_id: row.as_csv_dict() for row in report.rows}
     full = full_output.score(predicted, data.sample_truth)
     print(full.render())
-    failures = full_output.check_thresholds(full)
-    for failure in failures:
-        print(f"FAIL: full-output {failure}")
-    return 1 if failures else 0
+    full_failures = [f"full-output {failure}" for failure in full_output.check_thresholds(full)]
+
+    for failure in curve_failures + full_failures:
+        print(f"FAIL: {failure}")
+    return 1 if curve_failures + full_failures else 0
 
 
 if __name__ == "__main__":

@@ -48,8 +48,8 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ env.PYTHON_VERSION }}
-      # Thresholds are enforced from inside this command as each scorer lands
-      # (drawdown at M5b, full-output at M12).
+      # Thresholds are enforced from inside this command: the drawdown ceiling from M5b,
+      # the full-output floors from M12. A worsened median exits non-zero.
       - name: Score against the solved samples
         run: python code/main.py --samples --no-llm
 

@@ -66,6 +66,14 @@ class Engine:
         """Decide one request. Wired to the real engine at M12."""
         return placeholder_row(request.request_id)
 
+    def predicted_drawdown(self, request: Request) -> float:
+        """Depth of the forecast curve's trough below the opening balance.
+
+        The one figure the drawdown harness grades. Wired to the real forecaster at M7a;
+        until then it predicts no drawdown, which the recorded threshold reflects.
+        """
+        return 0.0
+
 
 def run(engine: Engine, requests) -> RunReport:
     report = RunReport()
