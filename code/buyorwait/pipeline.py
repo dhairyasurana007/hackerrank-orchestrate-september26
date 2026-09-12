@@ -15,7 +15,7 @@ import traceback
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from . import forecast
+from . import forecast, planner
 from .fx import RateTable
 from .loaders import Dataset
 from .records import Request
@@ -84,8 +84,27 @@ class Engine:
         )
 
     def decide(self, request: Request) -> OutputRow:
-        """Decide one request. Wired to the real engine at M12."""
-        return placeholder_row(request.request_id)
+        """Decide one request end to end."""
+        decision = self.decision_for(request)
+        return OutputRow(
+            request_id=request.request_id,
+            amount_safe_to_pay=decision.amount_safe_to_pay,
+            affordability_status=decision.chosen.status,
+            recommended_payment_method=decision.chosen.method,
+            payment_plan=decision.chosen.payments,
+            earliest_date_for_full_payment=decision.emitted_earliest,
+            spending_changes_needed=decision.chosen.spending_changes,
+            decision_explanation="",
+        )
+
+    def decision_for(self, request: Request):
+        profile = self.data.profiles[request.user_id]
+        return planner.decide(
+            request=request,
+            profile=profile,
+            curve=self.curve_for(request),
+            options=self.data.options(request.request_id),
+        )
 
     def predicted_drawdown(self, request: Request) -> float:
         """Depth of the forecast curve's trough below the opening balance.
