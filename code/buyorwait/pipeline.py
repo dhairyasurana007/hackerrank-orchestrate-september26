@@ -21,6 +21,7 @@ from .fx import RateTable
 from .loaders import Dataset
 from .model.client import ModelClient
 from .model.extract import apply_to_series, extract
+from .model.vision import extract_amount
 from .records import Request
 from .state import UserState, build_state
 from .writer import OutputRow, fallback_row
@@ -64,6 +65,7 @@ class Engine:
     use_llm: bool = False
     client: ModelClient | None = None
     amendment_log: list = field(default_factory=list)
+    vision_amounts: dict[str, dict[str, float]] = field(default_factory=dict)
 
     @classmethod
     def build(
@@ -78,19 +80,49 @@ class Engine:
             client = ModelClient(use_cache=use_cache)
         return cls(data=data, rates=RateTable(data.rates), use_llm=use_llm, client=client)
 
-    def state_for(self, request: Request) -> UserState:
+    def state_for(self, request: Request, *, recover_images: bool = True) -> UserState:
         return build_state(
             request,
             self.data.profiles[request.user_id],
             self.data.events(request.user_id),
             self.rates,
+            recovered=self.recovered_amounts_for(request) if recover_images else {},
         )
+
+    def recovered_amounts_for(self, request: Request) -> dict[str, float]:
+        """Exact document amounts recovered from linked images for this request.
+
+        Empty on the offline path, preserving the MVP's blank-amount fallback. Results are
+        memoized because state reconstruction is used by both extraction and forecasting.
+        """
+        if request.request_id in self.vision_amounts:
+            return dict(self.vision_amounts[request.request_id])
+        recovered: dict[str, float] = {}
+        if self.use_llm and self.client is not None and self.client.available:
+            events = self.data.events(request.user_id)
+            for event in events:
+                if event.amount is not None:
+                    continue
+                image_ref = self.data.images_by_event.get(event.event_id)
+                if image_ref is None or image_ref.request_id != request.request_id:
+                    continue
+                amount = extract_amount(
+                    request=request,
+                    event=event,
+                    image_ref=image_ref,
+                    dataset_root=self.data.root,
+                    client=self.client,
+                )
+                if amount is not None:
+                    recovered[event.event_id] = amount.amount
+        self.vision_amounts[request.request_id] = dict(recovered)
+        return recovered
 
     def amendments_for(self, request: Request):
         """Validated amendments for one request, or () on the offline path."""
         if not (self.use_llm and self.client is not None and self.client.available):
             return ()
-        state = self.state_for(request)
+        state = self.state_for(request, recover_images=False)
         purpose = f"message-extraction:{request.request_id}"
 
         def note(reason, amendment):
