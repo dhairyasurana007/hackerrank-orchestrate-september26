@@ -27,7 +27,7 @@
     "explanations_matching_ground_truth": 15
   },
   "with_recorded_extractions": {
-    "note": "Replaying code/tests/fixtures/extractions.py through an injected transport, which is what a live run with OPENROUTER_API_KEY set should approach.",
+    "note": "Replaying code/tests/fixtures/extractions.py through an injected transport. Kept for comparison against the live run below: the hand-authored fixtures and the live model agree closely, which is what makes the fixture suite a fair stand-in for a keyed run.",
     "drawdown": {
       "median_relative_error": 0.0851,
       "mean_relative_error": 0.1224,
@@ -40,6 +40,41 @@
       "recommended_payment_method": 0.88,
       "payment_plan": 0.88,
       "earliest_date_for_full_payment": 0.76
+    }
+  },
+  "live_scored_run": {
+    "note": "The manual scored-run CI job on main, with OPENROUTER_API_KEY supplied as a repository secret. Model layer live, cold cache.",
+    "workflow_run": "34721806286",
+    "drawdown": {
+      "median_relative_error": 0.085,
+      "mean_relative_error": 0.141,
+      "within_10pct": 11,
+      "within_25pct": 17,
+      "bound_violations": []
+    },
+    "full_output": {
+      "amount_safe_to_pay": 0.16,
+      "affordability_status": 0.84,
+      "recommended_payment_method": 0.88,
+      "payment_plan": 0.88,
+      "earliest_date_for_full_payment": 0.76,
+      "spending_changes_needed": 0.88,
+      "exact_rows": 4
+    },
+    "usage": {
+      "calls": 198,
+      "input_tokens": 185991,
+      "output_tokens": 9278,
+      "total_tokens": 195269,
+      "estimated_cost_usd": 0.089241,
+      "provider_reported_cost_usd": 0.089241,
+      "schema_failures": 0,
+      "provider_errors": 0
+    },
+    "output": {
+      "rows": 250,
+      "validator_violations": 0,
+      "fallback_rows": 0
     }
   }
 }
