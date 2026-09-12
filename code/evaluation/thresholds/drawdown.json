@@ -1,0 +1,130 @@
+{
+  "comment": "Owned by M5b. Forecast-curve accuracy, distinct from thresholds/full_output.json. The ceiling ratchets DOWN when a change is accepted and is never raised to accommodate a regression.",
+  "max_median_relative_error": 0.1126,
+  "max_bound_violations": 0,
+  "history": [
+    {
+      "task": "M5b",
+      "forecaster": "zero_forecaster",
+      "median_relative_error": 1.0,
+      "note": "The harness's own starting point: predicting no drawdown at all is 100% error on every exact sample. Recorded so the first real forecaster has something to beat."
+    },
+    {
+      "task": "M7a",
+      "forecaster": "build_explicit (explicit future events only, no recurrence projection)",
+      "median_relative_error": 1.0,
+      "mean_relative_error": 0.9421,
+      "note": "The explicit-only baseline. The median is unchanged from the zero forecaster because 15 of the 25 samples - and 14 of the 21 exact ones - have no explicit future events at all, so their curve is flat and their drawdown is zero by construction. The mean moves from 100% to 94.21%, which is the whole contribution of every pending debit and scheduled row in the dataset. That gap is the measured size of the projection job M7b has to do: on most samples, all of it."
+    },
+    {
+      "task": "M7b",
+      "forecaster": "build (explicit events + recurring projection, safety horizon at desired_completion_date)",
+      "median_relative_error": 0.148,
+      "mean_relative_error": 0.3209,
+      "within_10pct": 7,
+      "within_25pct": 15,
+      "bound_violations": 0,
+      "note": "Three changes, each measured separately. Projection alone: median 100% -> 16.4%. De-duplicating a projected occurrence against the explicit scheduled row that already covers it, keyed on (direction, category) rather than on description: 16.4% -> 14.8%, almost all of it request_13, whose scheduled salary is described differently from the history it continues. Seeding a monthly series from a scheduled credit with no detectable history (PLAN assumption 4): fixed request_01's upper-bound violation, 31,418 predicted against a 15,225 bound, down to 10,209. Measuring the trough through desired_completion_date instead of the full 90-day window: mean 67.6% -> 32.1% and the last bound violation gone; the median did not move, which is what says it is a tail correction and not a re-fit."
+    },
+    {
+      "task": "M7c",
+      "forecaster": "build, with the calibrated estimator: expenses at the 75th percentile of the last 6 observations, income at the mean of the last 6, MIN_OCCURRENCES 3 relaxed to 2 for an all-identical series",
+      "median_relative_error": 0.1125,
+      "mean_relative_error": 0.2897,
+      "within_10pct": 9,
+      "within_25pct": 16,
+      "bound_violations": 0,
+      "note": "Two accepted changes. (1) Expense series move from the mean of recent observations to the 75th percentile, which is what the spec's 'forecast essential variable spending conservatively' asks for: median 14.54% -> 11.25%, mean 29.66% -> 28.97%, within-25% 16 of 21. Income stays at the mean. (2) MIN_OCCURRENCES relaxed from 3 to 2 when every recorded amount in the series is identical, which lets user_15's twice-paid EUR 1,661 first-job payroll project while still refusing user_11's IDR 20.0M-then-8.5M commission. Neither change touches a three-or-more-occurrence series, so the variance gate PLAN.md 5.5 rules out stays out."
+    }
+  ],
+  "rejected_variants": [
+    {
+      "variant": "Step monthly series by their median gap from the last occurrence instead of anchoring to the modal day-of-month",
+      "measured": {
+        "median_relative_error": 0.1699,
+        "mean_relative_error": 0.3729,
+        "within_25pct": 12
+      },
+      "verdict": "rejected",
+      "note": "Confirms the planning finding on the corrected forecaster. Phase beats amount: drifting a monthly series by a day or two per cycle moves the trough across a salary date."
+    },
+    {
+      "variant": "Project no income at all; count only the explicitly scheduled rows",
+      "measured": {
+        "median_relative_error": 1.2041,
+        "mean_relative_error": 1.8947,
+        "within_25pct": 6,
+        "bound_violations": 1
+      },
+      "verdict": "rejected",
+      "note": "A defensible reading of 'do not invent unsupported future income', and catastrophic. Recurring salary is projected; which series qualify is the question, and that is what the M6 gate answers."
+    },
+    {
+      "variant": "Maximum of recent observations for every series, income included",
+      "measured": {
+        "median_relative_error": 0.0861,
+        "mean_relative_error": 0.292,
+        "within_25pct": 15
+      },
+      "verdict": "rejected despite a better median",
+      "note": "Over-states income, which the spec forbids. It measures better only because it rescues request_08, whose salary runs EUR 1,422.85 four times then 782.57 and whose correct forward amount is stated in a message - that belongs to the evidence layer, not to a statistic that happens to land on it. Also loses a within-25% sample."
+    },
+    {
+      "variant": "Maximum of recent observations for expenses only",
+      "measured": {
+        "median_relative_error": 0.1143,
+        "mean_relative_error": 0.3166,
+        "within_25pct": 14
+      },
+      "verdict": "rejected",
+      "note": "Worse than p75 on all three figures; the blanket-max finding from planning survives at the top of the range even though a high percentile does not."
+    },
+    {
+      "variant": "90th percentile of recent observations for expenses",
+      "measured": {
+        "median_relative_error": 0.104,
+        "mean_relative_error": 0.3073,
+        "within_25pct": 15
+      },
+      "verdict": "rejected",
+      "note": "Marginally better median than p75, worse mean and one fewer sample within 25%. Not worth the extra conservatism."
+    },
+    {
+      "variant": "MIN_OCCURRENCES lowered to 2 unconditionally",
+      "measured": {
+        "median_relative_error": 0.1007,
+        "mean_relative_error": 0.3137,
+        "within_25pct": 14
+      },
+      "verdict": "rejected despite a better median",
+      "note": "Projects user_11's 'Monthly sales commission' from two occurrences, which a message says is unapproved. The number improves because an over-credited commission cancels an over-forecast elsewhere; the semantics are wrong and PLAN.md 5.5 names this exact series as one that must not project."
+    },
+    {
+      "variant": "Income at the minimum, or at the single last observation, of recent history",
+      "measured": {
+        "mean_relative_error": 0.42
+      },
+      "verdict": "rejected",
+      "note": "Both roughly 42% mean error. Under-stating income is not free conservatism: it invents a shortfall and suppresses affordability."
+    },
+    {
+      "variant": "Fixed 90-day safety horizon instead of the request's desired_completion_date",
+      "measured": {
+        "median_relative_error": 0.148,
+        "mean_relative_error": 0.6763,
+        "bound_violations": 1
+      },
+      "verdict": "rejected at M7b",
+      "note": "Kept here because it is the single largest tail effect found. See the M7b history entry."
+    },
+    {
+      "variant": "Cadence limited to a fixed weekly/fortnightly/monthly menu",
+      "measured": {
+        "note": "Rejected 280 debit series across the dataset that are perfectly regular at 5, 10 or 21 days"
+      },
+      "verdict": "rejected at M6",
+      "note": "Silently dropped real recurring spending from every affected forecast."
+    }
+  ],
+  "max_mean_relative_error": 0.2897
+}

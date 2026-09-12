@@ -1,0 +1,45 @@
+{
+  "task": "M18",
+  "commit": "f6ff3cdd815aafe929825c39b69539ca602c91b6",
+  "note": "The MVP's recorded scores on the offline (--no-llm) path. F0 reproduces these on main after the merge; any difference means the merge introduced a change.",
+  "offline": {
+    "drawdown": {
+      "exact_samples": 21,
+      "capped_samples": 4,
+      "median_relative_error": 0.1125,
+      "mean_relative_error": 0.2897,
+      "bound_violations": [],
+      "within_10pct": 9,
+      "within_25pct": 16
+    },
+    "full_output": {
+      "scored": 25,
+      "exact_rows": 4,
+      "accuracy": {
+        "amount_safe_to_pay": 0.16,
+        "affordability_status": 0.8,
+        "recommended_payment_method": 0.84,
+        "payment_plan": 0.84,
+        "earliest_date_for_full_payment": 0.68,
+        "spending_changes_needed": 0.88
+      }
+    },
+    "explanations_matching_ground_truth": 15
+  },
+  "with_recorded_extractions": {
+    "note": "Replaying code/tests/fixtures/extractions.py through an injected transport, which is what a live run with OPENROUTER_API_KEY set should approach.",
+    "drawdown": {
+      "median_relative_error": 0.0851,
+      "mean_relative_error": 0.1224,
+      "within_10pct": 11,
+      "within_25pct": 18,
+      "bound_violations": []
+    },
+    "full_output": {
+      "affordability_status": 0.84,
+      "recommended_payment_method": 0.88,
+      "payment_plan": 0.88,
+      "earliest_date_for_full_payment": 0.76
+    }
+  }
+}

@@ -1,0 +1,27 @@
+{
+  "comment": "Owned by M4, enforced by CI from M12. Floors are the measured accuracy at the moment each is recorded; they ratchet DOWN as accuracy improves and are never raised to accommodate a regression.",
+  "min_accuracy": {
+    "amount_safe_to_pay": 0.16,
+    "affordability_status": 0.8,
+    "recommended_payment_method": 0.84,
+    "payment_plan": 0.84,
+    "earliest_date_for_full_payment": 0.68,
+    "spending_changes_needed": 0.88
+  },
+  "min_exact_rows": 4,
+  "history": [
+    {
+      "task": "M12",
+      "note": "First real rows to score: the writer and the plan engine are both in place. Recorded as the floor CI now defends.",
+      "accuracy": {
+        "amount_safe_to_pay": 0.16,
+        "affordability_status": 0.8,
+        "recommended_payment_method": 0.84,
+        "payment_plan": 0.84,
+        "earliest_date_for_full_payment": 0.68,
+        "spending_changes_needed": 0.88
+      },
+      "exact_rows": 4
+    }
+  ]
+}

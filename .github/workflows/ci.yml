@@ -1,0 +1,82 @@
+name: CI
+
+# Must run green with no API key: that is what makes it a usable gate on every push.
+# The scored run that needs OPENROUTER_API_KEY is the manual `scored-run` job below and is
+# never on the push path, so a missing or exhausted key can never block development.
+
+on:
+  push:
+    branches: [mvp, main]
+  pull_request:
+    branches: [mvp, main]
+  workflow_dispatch:
+
+env:
+  PYTHON_VERSION: "3.13"
+
+jobs:
+  tests:
+    name: tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      # Same command as the local full-suite run, so the two levels cannot drift.
+      - run: python -m unittest discover -s code/tests -t . -v
+
+  pipeline-offline:
+    name: pipeline-offline
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - name: Run the pipeline with no model layer
+        run: python code/main.py --no-llm
+      # Staged assertions (TASKS.md 2.3), now all three: row count and header from M0,
+      # zero contract violations from M11, zero failure-isolation fallback rows from M13.
+      # A non-zero fallback count is a defect to fix, never an acceptable steady state.
+      - name: Check the output contract
+        run: >-
+          python code/evaluation/check_output.py output.csv --rows 250
+          --validate --no-fallback-rows
+
+  scorers:
+    name: scorers
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      # Thresholds are enforced from inside this command: the drawdown ceiling from M5b,
+      # the full-output floors from M12. A worsened median exits non-zero.
+      - name: Score against the solved samples
+        run: python code/main.py --samples --no-llm
+
+  scored-run:
+    name: scored-run (manual)
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - name: Run the pipeline with the model layer live
+        env:
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+        run: python code/main.py
+      - name: Check the output contract
+        run: >-
+          python code/evaluation/check_output.py output.csv --rows 250
+          --validate --no-fallback-rows
+      - uses: actions/upload-artifact@v4
+        with:
+          name: scored-output
+          path: |
+            output.csv
+            code/evaluation/usage_report.md
