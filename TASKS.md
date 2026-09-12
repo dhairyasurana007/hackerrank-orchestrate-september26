@@ -7,6 +7,17 @@ this file wins on sequencing.
 Two sections: **MVP** (§3, on the `mvp` branch) and **FINAL** (§4, on `main`). MVP ships first and
 is a complete, submittable solution on its own. FINAL is built on top of it and never replaces it.
 
+**The repository.** All work happens in, and is pushed to:
+
+> **https://github.com/dhairyasurana007/hackerrank-orchestrate-september26**
+
+This is the submission repository and the only push target. It is `origin`. The organizer's
+starter repository — `upstream`, at
+`https://github.com/interviewstreet/hackerrank-orchestrate-september26.git` — is **never** pushed
+to; it exists solely to pull dataset or problem-statement corrections. Confirm with
+`git remote -v` before the first push of a session, because `gh` resolves to `upstream` by default
+here (§1.3).
+
 **§1 governs every commit in both sections and is not optional.** Read it before starting any task.
 
 ---
@@ -84,13 +95,15 @@ Two environment caveats, both verified:
 - **Not on the shell PATH** for sessions started before it was installed. Invoke by full path, or
   from a fresh shell.
 - **This repository has two remotes**, and `gh` resolved to `upstream`
-  (`interviewstreet/...`) rather than `origin`. Left uncorrected, every CI check in this cycle
+  (`interviewstreet/hackerrank-orchestrate-september26`) rather than `origin`
+  (`dhairyasurana007/hackerrank-orchestrate-september26`). Left uncorrected, every CI check in this cycle
   would poll the organizer's repository and report no runs. `gh repo set-default` has been set to
   the submission repo, which fixes `gh run`, but not every subcommand honours it — `gh secret`
   still fails on the ambiguity. **Pass `-R` explicitly**; it is the only form verified to work
   across subcommands.
 
-With that, `gh` covers steps 5 to 7 directly:
+`$R` below is the repository in `owner/name` form. It is the variable used by the commands in
+§1.2 steps 5 to 7, and must be set in the shell before they will work:
 
 ```bash
 GH="/c/Program Files/GitHub CLI/gh.exe"
@@ -191,8 +204,13 @@ nothing depends on them.
 - **`mvp` exists locally but has never been pushed**, so `origin/mvp` does not exist yet and the
   branch has no upstream. Its first push must be `git push -u origin mvp`; every push after that is
   plain `git push`.
-- `origin` → `https://github.com/dhairyasurana007/hackerrank-orchestrate-september26`
-- `upstream` → the organizer's starter repo, retained for dataset or statement corrections.
+- `origin` → `https://github.com/dhairyasurana007/hackerrank-orchestrate-september26.git`
+  — the submission repository, and the only branch target for every push in §3 and §4.
+- `upstream` → `https://github.com/interviewstreet/hackerrank-orchestrate-september26.git`
+  — the organizer's starter repository, retained for dataset or statement corrections.
+  **Never pushed to.**
+
+Both strings match `git remote -v` exactly, including the `.git` suffix.
 - MVP work commits to `mvp`. When the MVP meets its done-criteria it is tagged `mvp-baseline` and
   merged into `main`; FINAL work continues on `main` from that merge commit.
 - `mvp` is **not deleted** after the merge. FINAL requires a per-row fallback to the MVP answer, so
