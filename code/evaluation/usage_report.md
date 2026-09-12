@@ -1,6 +1,6 @@
 # Token usage and cost
 
-Generated 2026-09-12 22:49 UTC from `evaluation/model_run_log.jsonl`, one record per model
+Generated 2026-09-12 23:01 UTC from `evaluation/model_run_log.jsonl`, one record per model
 call. Every figure below is read out of that log rather than written by hand, so the
 totals reconcile with the run by construction.
 
