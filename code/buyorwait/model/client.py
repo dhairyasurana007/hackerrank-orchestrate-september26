@@ -43,6 +43,44 @@ from .config import (
 
 RUN_LOG_PATH = paths.code_dir() / "evaluation" / "model_run_log.jsonl"
 
+#: Searched for a gitignored `.env` when the variable is not already in the environment
+#: (PLAN.md assumption 11). Nothing is ever written here, and the file is never committed.
+_ENV_FILE_LOCATIONS = (
+    paths.code_dir().parent / ".env",
+    paths.code_dir() / ".env",
+)
+
+
+def _read_env_file(name: str) -> str | None:
+    """Read one variable from a `.env` file, if one exists beside the project.
+
+    Deliberately minimal: `KEY=value` lines, optional `export` prefix, optional surrounding
+    quotes, `#` comments. A dotenv dependency is not worth taking on for this, and a real
+    environment variable always wins so a shell export cannot be silently overridden.
+    """
+    for path in _ENV_FILE_LOCATIONS:
+        if not path.is_file():
+            continue
+        for line in path.read_text(encoding="utf-8").splitlines():
+            line = line.strip()
+            if not line or line.startswith("#"):
+                continue
+            if line.startswith("export "):
+                line = line[len("export "):].strip()
+            key, separator, value = line.partition("=")
+            if not separator or key.strip() != name:
+                continue
+            value = value.strip()
+            if len(value) >= 2 and value[0] == value[-1] and value[0] in "\"'":
+                value = value[1:-1]
+            return value or None
+    return None
+
+
+def api_key_from_environment() -> str | None:
+    """The OpenRouter key, from the environment or a gitignored `.env`. Never logged."""
+    return os.environ.get(API_KEY_ENV) or _read_env_file(API_KEY_ENV)
+
 
 @dataclass
 class Usage:
@@ -102,7 +140,7 @@ class ModelClient:
         run_log_path: Path | None = None,
         transport=None,
     ):
-        self.api_key = api_key if api_key is not None else os.environ.get(API_KEY_ENV)
+        self.api_key = api_key if api_key is not None else api_key_from_environment()
         self.settings = settings or CallSettings()
         self.cache_dir = Path(cache_dir) if cache_dir else paths.cache_dir() / "model"
         self.use_cache = use_cache
