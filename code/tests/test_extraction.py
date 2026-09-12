@@ -412,6 +412,104 @@ class TestPromptInjectionResistance(unittest.TestCase):
         self.assertEqual(attacked, offline)
 
 
+class TestConflictResolution(unittest.TestCase):
+    """TASKS.md F2: multi-message precedence is deterministic, not model-authored."""
+
+    def _message(self, message_id, text, *, day=1, source="employer") -> Message:
+        return Message(
+            message_id=message_id,
+            user_id="user_zz",
+            request_id=None,
+            related_event_id=None,
+            sent_at=dt.datetime(2026, 1, day, 9, 0, tzinfo=dt.timezone.utc),
+            source_type=source,
+            message_text=text,
+        )
+
+    def _income(self, message, amount, *, source=None, description="salary"):
+        return evidence.Amendment(
+            kind="income_amount",
+            amount=amount,
+            currency="EUR",
+            target_description=description,
+            confidence=0.9,
+            message_id=message.message_id,
+            source_type=source or message.source_type,
+        )
+
+    def _suppress(self, message, *, source=None, description="salary"):
+        return evidence.Amendment(
+            kind="income_suppressed",
+            target_description=description,
+            confidence=0.9,
+            message_id=message.message_id,
+            source_type=source or message.source_type,
+        )
+
+    def _rent_change(self, message, percent):
+        return evidence.Amendment(
+            kind="expense_change_pct",
+            percent_change=percent,
+            target_category="rent",
+            confidence=0.9,
+            message_id=message.message_id,
+            source_type=message.source_type,
+        )
+
+    def test_explicit_suppression_beats_an_earlier_income_record(self):
+        old = self._message("message_a", "Salary will be EUR 2000.", day=1)
+        new = self._message("message_b", "That payroll is pending approval.", day=2)
+        resolved = extractor.resolve_conflicts(
+            [self._income(old, 2000), self._suppress(new)], {m.message_id: m for m in (old, new)}
+        )
+        self.assertEqual([a.kind for a in resolved], ["income_suppressed"])
+
+    def test_newer_message_from_the_same_source_beats_older(self):
+        old = self._message("message_a", "Salary will be EUR 2000.", day=1)
+        new = self._message("message_b", "Updated salary will be EUR 1800.", day=2)
+        resolved = extractor.resolve_conflicts(
+            [self._income(old, 2000), self._income(new, 1800)], {m.message_id: m for m in (old, new)}
+        )
+        self.assertEqual(len(resolved), 1)
+        self.assertEqual(resolved[0].message_id, "message_b")
+        self.assertAlmostEqual(resolved[0].amount, 1800)
+
+    def test_settled_fact_beats_an_estimate_even_when_the_estimate_is_newer(self):
+        posted = self._message("message_a", "Salary has posted and reached your account: EUR 1900.", day=1)
+        estimate = self._message(
+            "message_b",
+            "Estimated next salary is expected to be EUR 2100.",
+            day=2,
+            source="financial_service",
+        )
+        resolved = extractor.resolve_conflicts(
+            [self._income(posted, 1900), self._income(estimate, 2100)],
+            {m.message_id: m for m in (posted, estimate)},
+        )
+        self.assertEqual(len(resolved), 1)
+        self.assertEqual(resolved[0].message_id, "message_a")
+
+    def test_safer_income_amount_wins_when_nothing_else_resolves_it(self):
+        left = self._message("message_a", "Payroll update EUR 2200.", day=1, source="employer")
+        right = self._message("message_b", "Payroll update EUR 1700.", day=1, source="bank")
+        resolved = extractor.resolve_conflicts(
+            [self._income(left, 2200), self._income(right, 1700)],
+            {m.message_id: m for m in (left, right)},
+        )
+        self.assertEqual(len(resolved), 1)
+        self.assertAlmostEqual(resolved[0].amount, 1700)
+
+    def test_safer_percentage_change_is_the_larger_expense_increase(self):
+        left = self._message("message_a", "Rent up 8%.", day=1, source="service_provider")
+        right = self._message("message_b", "Rent up 12%.", day=1, source="merchant")
+        resolved = extractor.resolve_conflicts(
+            [self._rent_change(left, 8), self._rent_change(right, 12)],
+            {m.message_id: m for m in (left, right)},
+        )
+        self.assertEqual(len(resolved), 1)
+        self.assertEqual(resolved[0].percent_change, 12)
+
+
 class TestApplicationToTheForecast(unittest.TestCase):
     """The measured effect, end to end, on the samples that carry messages."""
 

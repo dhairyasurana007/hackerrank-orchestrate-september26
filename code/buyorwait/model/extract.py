@@ -106,6 +106,9 @@ Rules:
 - confidence is your own 0-1 estimate that the fact is stated plainly and unambiguously.
 - A one-off adjustment, arrears payment, bonus, prize, refund, or invoice settlement that has
   not yet settled is NOT income_amount. Report it as income_suppressed or not at all.
+- When several messages discuss the same source, apply this precedence: explicit cancellation
+  or amendment beats an earlier record; newer from the same source beats older; settled or
+  posted facts beat estimates; if still ambiguous, report the financially safer fact.
 - Indonesian and English messages are handled identically.
 """
 
@@ -192,7 +195,95 @@ def extract(
             )
             continue
         amendments.append(amendment)
-    return tuple(amendments)
+    return resolve_conflicts(amendments, lookup)
+
+
+def resolve_conflicts(amendments, message_lookup) -> tuple[Amendment, ...]:
+    """Apply the spec's precedence order to amendments about the same source.
+
+    The extractor sees all applicable messages at once, but the deterministic layer still
+    owns conflict resolution. This keeps the model from deciding which fact is safer.
+    """
+    kept: list[Amendment] = []
+    for amendment in sorted(amendments, key=lambda a: _message_order(a, message_lookup)):
+        current_key = _target_key(amendment)
+        current_rank = _settlement_rank(amendment, message_lookup)
+        replaced = []
+        skip_current = False
+        for index, prior in enumerate(kept):
+            if _target_key(prior) != current_key:
+                continue
+            prior_rank = _settlement_rank(prior, message_lookup)
+            if _same_source(prior, amendment) and _message_order(amendment, message_lookup) >= _message_order(prior, message_lookup):
+                replaced.append(index)
+            elif _is_negative(amendment) and _message_order(amendment, message_lookup) >= _message_order(prior, message_lookup):
+                replaced.append(index)
+            elif current_rank > prior_rank:
+                replaced.append(index)
+            elif current_rank < prior_rank:
+                skip_current = True
+            elif _financially_safer(amendment, prior) is amendment:
+                replaced.append(index)
+            elif _financially_safer(amendment, prior) is prior:
+                skip_current = True
+        if skip_current:
+            continue
+        for index in reversed(replaced):
+            kept.pop(index)
+        kept.append(amendment)
+    return tuple(kept)
+
+
+def _message_order(amendment: Amendment, lookup) -> tuple:
+    message = lookup.get(amendment.message_id)
+    if message is None:
+        return (dt.datetime.min.replace(tzinfo=dt.timezone.utc), amendment.message_id)
+    return (message.sent_at, message.message_id)
+
+
+def _target_key(amendment: Amendment) -> tuple:
+    if amendment.kind == "expense_change_pct":
+        return ("expense", amendment.target_category or "")
+    hint = (amendment.target_description or "").strip().lower()
+    return ("income", hint or "income")
+
+
+def _same_source(left: Amendment, right: Amendment) -> bool:
+    return bool(left.source_type) and left.source_type == right.source_type
+
+
+def _is_negative(amendment: Amendment) -> bool:
+    return amendment.kind in ("income_stopped", "income_suppressed")
+
+
+def _settlement_rank(amendment: Amendment, lookup) -> int:
+    text = ""
+    message = lookup.get(amendment.message_id)
+    if message is not None:
+        text = message.message_text.lower()
+    settled = ("settled", "credited", "posted", "completed", "reached your account", "paid")
+    estimated = ("estimated", "expected", "pending", "under review", "can change", "not withdrawable")
+    if any(word in text for word in settled):
+        return 2
+    if any(word in text for word in estimated):
+        return 0
+    return 1
+
+
+def _financially_safer(left: Amendment, right: Amendment) -> Amendment | None:
+    if _is_negative(left) and not _is_negative(right):
+        return left
+    if _is_negative(right) and not _is_negative(left):
+        return right
+    if left.kind == right.kind == "income_amount":
+        if left.amount is None or right.amount is None:
+            return None
+        return left if left.amount < right.amount else right
+    if left.kind == right.kind == "expense_change_pct":
+        if left.percent_change is None or right.percent_change is None:
+            return None
+        return left if left.percent_change > right.percent_change else right
+    return None
 
 
 def apply_to_series(
