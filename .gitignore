@@ -6,5 +6,8 @@ __pycache__/
 code.zip
 output.csv.run.json
 code/evaluation/model_run_log.jsonl
+artifacts/
+*.offline-check.csv
+*.offline-check.csv.run.json
 
 log.txt

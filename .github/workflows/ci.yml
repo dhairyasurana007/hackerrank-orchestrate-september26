@@ -84,6 +84,10 @@ jobs:
         run: >-
           python code/evaluation/check_output.py output.csv --rows 250
           --validate --no-fallback-rows
+      - name: Verify submission archive layout and reproduction
+        env:
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+        run: python code/scripts/package_submission.py --zip code.zip --verify-run
       - name: Show the usage report
         run: cat code/evaluation/usage_report.md
       - uses: actions/upload-artifact@v4
@@ -94,5 +98,6 @@ jobs:
           path: |
             output.csv
             output.csv.run.json
+            code.zip
             code/evaluation/usage_report.md
             code/evaluation/model_run_log.jsonl
