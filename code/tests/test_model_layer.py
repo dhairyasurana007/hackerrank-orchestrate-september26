@@ -378,5 +378,60 @@ class TestRequestBody(unittest.TestCase):
         self.assertNotIn("temperature", seen)
 
 
+class TestKeyResolution(unittest.TestCase):
+    """The key comes from the environment, or from a gitignored .env (PLAN.md assumption 11)."""
+
+    def setUp(self):
+        import os
+
+        from buyorwait.model import client as client_module
+
+        self.os = os
+        self.client_module = client_module
+        self.saved_locations = client_module._ENV_FILE_LOCATIONS
+        self.saved_env = os.environ.get("OPENROUTER_API_KEY")
+
+    def tearDown(self):
+        self.client_module._ENV_FILE_LOCATIONS = self.saved_locations
+        if self.saved_env is None:
+            self.os.environ.pop("OPENROUTER_API_KEY", None)
+        else:
+            self.os.environ["OPENROUTER_API_KEY"] = self.saved_env
+
+    def _with_env_file(self, contents):
+        tmp = tempfile.mkdtemp()
+        path = Path(tmp) / ".env"
+        path.write_text(contents, encoding="utf-8")
+        self.client_module._ENV_FILE_LOCATIONS = (path,)
+        return path
+
+    def test_a_real_environment_variable_wins(self):
+        self.os.environ["OPENROUTER_API_KEY"] = "from-environment"
+        self._with_env_file("OPENROUTER_API_KEY=from-file\n")
+        self.assertEqual(self.client_module.api_key_from_environment(), "from-environment")
+
+    def test_a_plain_env_file_line_is_read(self):
+        self.os.environ.pop("OPENROUTER_API_KEY", None)
+        self._with_env_file("OPENROUTER_API_KEY=abc123\n")
+        self.assertEqual(self.client_module.api_key_from_environment(), "abc123")
+
+    def test_export_prefixes_quotes_comments_and_other_keys_are_handled(self):
+        self.os.environ.pop("OPENROUTER_API_KEY", None)
+        self._with_env_file(
+            "# a comment\nOTHER_KEY=nope\nexport OPENROUTER_API_KEY=\"quoted-value\"\n"
+        )
+        self.assertEqual(self.client_module.api_key_from_environment(), "quoted-value")
+
+    def test_no_env_file_and_no_variable_means_no_key(self):
+        self.os.environ.pop("OPENROUTER_API_KEY", None)
+        self.client_module._ENV_FILE_LOCATIONS = (Path(tempfile.mkdtemp()) / "absent.env",)
+        self.assertIsNone(self.client_module.api_key_from_environment())
+
+    def test_an_empty_value_is_treated_as_absent_rather_than_as_a_key(self):
+        self.os.environ.pop("OPENROUTER_API_KEY", None)
+        self._with_env_file("OPENROUTER_API_KEY=\n")
+        self.assertIsNone(self.client_module.api_key_from_environment())
+
+
 if __name__ == "__main__":
     unittest.main()
