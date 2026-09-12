@@ -18,6 +18,7 @@ if __package__ in (None, ""):  # invoked as a script: make `buyorwait` importabl
 
 from buyorwait import paths  # noqa: E402
 from buyorwait.loaders import load_dataset  # noqa: E402
+from buyorwait.records import DatasetError  # noqa: E402
 from buyorwait.pipeline import Engine, run  # noqa: E402
 from buyorwait.writer import write_output  # noqa: E402
 from evaluation import drawdown, full_output  # noqa: E402
@@ -42,14 +43,30 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
-    dataset = paths.find_dataset(args.dataset)
+    try:
+        dataset = paths.find_dataset(args.dataset)
+    except (FileNotFoundError, DatasetError) as error:
+        # A bad --dataset is a usage error, not a crash: report it in one line and stop.
+        print(f"error: {error}", file=sys.stderr)
+        return 2
     output = Path(args.output) if args.output else paths.default_output(dataset)
 
-    data = load_dataset(dataset)
+    try:
+        data = load_dataset(dataset)
+    except DatasetError as error:
+        print(f"error: {error}", file=sys.stderr)
+        return 2
+
     requests = data.samples if args.samples else data.requests
     if args.requests:
-        wanted = {rid.strip() for rid in args.requests.split(",") if rid.strip()}
-        requests = tuple(r for r in requests if r.request_id in wanted)
+        wanted = [rid.strip() for rid in args.requests.split(",") if rid.strip()]
+        known = {r.request_id for r in requests}
+        missing = [rid for rid in wanted if rid not in known]
+        if missing:
+            # Silently emitting fewer rows would look like a successful short run.
+            print(f"error: unknown request id(s): {', '.join(missing)}", file=sys.stderr)
+            return 2
+        requests = tuple(r for r in requests if r.request_id in set(wanted))
 
     engine = Engine.build(data, use_llm=not args.no_llm)
     report = run(engine, requests)

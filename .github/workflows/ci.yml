@@ -36,10 +36,13 @@ jobs:
           python-version: ${{ env.PYTHON_VERSION }}
       - name: Run the pipeline with no model layer
         run: python code/main.py --no-llm
-      # Staged assertions (TASKS.md 2.3): --validate enabled at M11; --no-fallback-rows
-      # lands at M13, which is where the fallback path itself comes into existence.
+      # Staged assertions (TASKS.md 2.3), now all three: row count and header from M0,
+      # zero contract violations from M11, zero failure-isolation fallback rows from M13.
+      # A non-zero fallback count is a defect to fix, never an acceptable steady state.
       - name: Check the output contract
-        run: python code/evaluation/check_output.py output.csv --rows 250 --validate
+        run: >-
+          python code/evaluation/check_output.py output.csv --rows 250
+          --validate --no-fallback-rows
 
   scorers:
     name: scorers
@@ -68,7 +71,9 @@ jobs:
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
         run: python code/main.py
       - name: Check the output contract
-        run: python code/evaluation/check_output.py output.csv --rows 250 --validate
+        run: >-
+          python code/evaluation/check_output.py output.csv --rows 250
+          --validate --no-fallback-rows
       - uses: actions/upload-artifact@v4
         with:
           name: scored-output
