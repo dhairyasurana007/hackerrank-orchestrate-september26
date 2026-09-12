@@ -21,6 +21,7 @@ from .fx import RateTable
 from .loaders import Dataset
 from .model.client import ModelClient
 from .model.extract import apply_to_series, extract
+from .model.polish import polish_explanation
 from .model.vision import extract_amount
 from .records import Request
 from .state import UserState, build_state
@@ -192,6 +193,13 @@ class Engine:
         """Decide one request end to end."""
         decision = self.decision_for(request)
         profile = self.data.profiles[request.user_id]
+        explanation = explain.render(decision, request, profile)
+        if self.use_llm and self.client is not None and self.client.available:
+            explanation = polish_explanation(
+                template=explanation,
+                client=self.client,
+                purpose=f"explanation-polish:{request.request_id}",
+            )
         return OutputRow(
             request_id=request.request_id,
             amount_safe_to_pay=decision.amount_safe_to_pay,
@@ -200,7 +208,7 @@ class Engine:
             payment_plan=decision.chosen.payments,
             earliest_date_for_full_payment=decision.emitted_earliest,
             spending_changes_needed=decision.chosen.spending_changes,
-            decision_explanation=explain.render(decision, request, profile),
+            decision_explanation=explanation,
         )
 
     def decision_for(self, request: Request):

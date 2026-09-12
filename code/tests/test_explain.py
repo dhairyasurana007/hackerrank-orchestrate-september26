@@ -9,9 +9,14 @@ decide whether rewritten text may replace a template.
 from __future__ import annotations
 
 import datetime as dt
+import json
+import tempfile
 import unittest
+from pathlib import Path
 
 from buyorwait import explain, loaders, paths
+from buyorwait.model.client import ModelClient
+from buyorwait.model import polish
 from buyorwait.pipeline import Engine
 
 DATASET = paths.find_dataset()
@@ -231,6 +236,78 @@ class TestGrounding(unittest.TestCase):
                 self.assertEqual(
                     explain.figures_in(text) - allowed, set(), f"{request.request_id}: {text}"
                 )
+
+
+def _polish_client(tmp, explanation):
+    def transport(body):
+        return {
+            "choices": [{"message": {"content": json.dumps({"explanation": explanation})}}],
+            "usage": {"prompt_tokens": 300, "completion_tokens": 60, "cost": 0.00022},
+        }
+
+    return ModelClient(
+        api_key="fixture-key",
+        cache_dir=Path(tmp) / "cache",
+        run_log_path=Path(tmp) / "run_log.jsonl",
+        transport=transport,
+    )
+
+
+class TestPolishGuard(unittest.TestCase):
+    """TASKS.md F3: fluent text is accepted only under exact figure/date matching."""
+
+    TEMPLATE = (
+        "Pay EUR 996.60 in full on 15 April 2025. "
+        "Paying earlier would take the balance below the EUR 800 minimum."
+    )
+
+    def test_a_polished_explanation_with_the_same_figures_replaces_the_template(self):
+        candidate = (
+            "Pay the full EUR 996.60 on 15 April 2025; before then, the payment would "
+            "push the balance under the EUR 800 minimum."
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            text = polish.polish_explanation(
+                template=self.TEMPLATE,
+                client=_polish_client(tmp, candidate),
+                purpose="explanation-polish:test",
+            )
+        self.assertEqual(text, candidate)
+
+    def test_a_polished_explanation_that_alters_a_number_falls_back(self):
+        candidate = "Pay EUR 996.60 on 16 April 2025 and keep EUR 800 protected."
+        with tempfile.TemporaryDirectory() as tmp:
+            client = _polish_client(tmp, candidate)
+            text = polish.polish_explanation(
+                template=self.TEMPLATE,
+                client=client,
+                purpose="explanation-polish:test",
+            )
+        self.assertEqual(text, self.TEMPLATE)
+        self.assertTrue(any(record["record"] == "dropped" for record in client.records))
+
+    def test_a_polished_explanation_that_adds_or_drops_a_number_falls_back(self):
+        cases = (
+            "Pay EUR 996.60 on 15 April 2025 and keep EUR 800 protected for 90 days.",
+            "Pay in full on 15 April 2025 and keep EUR 800 protected.",
+        )
+        for candidate in cases:
+            with self.subTest(candidate=candidate), tempfile.TemporaryDirectory() as tmp:
+                text = polish.polish_explanation(
+                    template=self.TEMPLATE,
+                    client=_polish_client(tmp, candidate),
+                    purpose="explanation-polish:test",
+                )
+                self.assertEqual(text, self.TEMPLATE)
+
+    def test_engine_decide_uses_accepted_polish_on_the_live_path(self):
+        data = loaders.load_dataset(DATASET)
+        request = data.request("request_01")
+        template = Engine.build(data, use_llm=False).decide(request).decision_explanation
+        candidate = template.replace("Pay ", "Go ahead and pay ", 1)
+        with tempfile.TemporaryDirectory() as tmp:
+            engine = Engine.build(data, use_llm=True, client=_polish_client(tmp, candidate))
+            self.assertEqual(engine.decide(request).decision_explanation, candidate)
 
 
 class TestAgainstTheSolvedSamples(unittest.TestCase):
