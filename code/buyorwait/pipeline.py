@@ -15,7 +15,7 @@ import traceback
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from . import forecast, planner
+from . import forecast, planner, spending
 from .fx import RateTable
 from .loaders import Dataset
 from .records import Request
@@ -99,11 +99,16 @@ class Engine:
 
     def decision_for(self, request: Request):
         profile = self.data.profiles[request.user_id]
+
+        def change_search(**kwargs):
+            return spending.search(rates=self.rates, **kwargs)
+
         return planner.decide(
             request=request,
             profile=profile,
             curve=self.curve_for(request),
             options=self.data.options(request.request_id),
+            spending_change_search=change_search,
         )
 
     def predicted_drawdown(self, request: Request) -> float:

@@ -145,6 +145,44 @@ class Curve:
         )
 
 
+    def repriced(self, overrides: dict[tuple, float]) -> "Curve":
+        """A copy with named projected series re-priced; 0.0 stops a series outright.
+
+        Rebuilt from the recorded explicit and projected movements rather than patched, so a
+        spending change is modelled as the series actually changing rather than as a lump
+        credit somewhere. ``overrides`` maps a series key to its new *unsigned* amount.
+        """
+        deltas: dict[int, float] = {}
+        for movement in self.explicit:
+            offset = (movement.when - self.start).days
+            deltas[offset] = deltas.get(offset, 0.0) + movement.amount
+        projected = []
+        for movement in self.projected:
+            amount = movement.amount
+            if movement.series_key in overrides:
+                sign = 1.0 if amount > 0 else -1.0
+                amount = sign * overrides[movement.series_key]
+            offset = (movement.when - self.start).days
+            deltas[offset] = deltas.get(offset, 0.0) + amount
+            projected.append(
+                ProjectedMovement(
+                    when=movement.when,
+                    amount=amount,
+                    series_key=movement.series_key,
+                    category=movement.category,
+                )
+            )
+        return Curve(
+            start=self.start,
+            opening=self.opening,
+            values=_accumulate(self.start, self.opening, len(self.values), deltas),
+            explicit=self.explicit,
+            projected=tuple(projected),
+            series=self.series,
+            notes=list(self.notes),
+        )
+
+
 def _accumulate(start: dt.date, opening: float, days: int, deltas: dict[int, float]) -> list[float]:
     values = []
     balance = opening
