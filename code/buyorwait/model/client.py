@@ -282,6 +282,12 @@ class ModelClient:
         return ModelResult(payload=None, model_id=model.model_id, error=last_error)
 
     def _post(self, body: dict) -> dict:
+        """POST to OpenRouter, surfacing the provider's own error text on a failure.
+
+        Without this, a rejected request reports only "HTTP Error 400: Bad Request" and the
+        reason - which OpenRouter puts in the response body - is thrown away. That cost a
+        full round trip through CI to diagnose once; it should not cost a second.
+        """
         request = urllib.request.Request(
             COMPLETIONS_ENDPOINT,
             data=json.dumps(body).encode("utf-8"),
@@ -293,8 +299,16 @@ class ModelClient:
             },
             method="POST",
         )
-        with urllib.request.urlopen(request, timeout=self.settings.timeout_seconds) as handle:
-            return json.loads(handle.read().decode("utf-8"))
+        try:
+            with urllib.request.urlopen(request, timeout=self.settings.timeout_seconds) as handle:
+                return json.loads(handle.read().decode("utf-8"))
+        except urllib.error.HTTPError as error:
+            detail = ""
+            try:
+                detail = error.read().decode("utf-8", "replace")[:500]
+            except Exception:  # noqa: BLE001 - a body we cannot read is not worth a crash
+                detail = "<no response body>"
+            raise RuntimeError(f"HTTP {error.code} from OpenRouter: {detail}") from None
 
     def _cache_path(self, key: str) -> Path:
         return self.cache_dir / key[:2] / f"{key}.json"

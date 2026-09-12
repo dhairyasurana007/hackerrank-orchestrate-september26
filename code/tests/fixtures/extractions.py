@@ -12,8 +12,36 @@ actionable financial fact.
 
 from __future__ import annotations
 
+#: Every field the schema declares, in the order it declares them. Strict structured output
+#: requires a response to carry *all* of them, with optionality expressed as an explicit
+#: null - so a faithful recording has no missing keys, only null ones.
+_FIELDS = {
+    "kind": None,
+    "message_id": None,
+    "amount": None,
+    "currency": None,
+    "effective_date": None,
+    "percent_change": None,
+    "target_category": None,
+    "target_description": None,
+    "scope": "ongoing",
+    "confidence": 0.0,
+}
+
+
+def _complete(amendment: dict) -> dict:
+    """Expand a concise literal into the full record a strict-mode response returns.
+
+    The literals below state only the fields that carry meaning, which keeps them readable;
+    this fills in the explicit nulls the provider is obliged to send. Writing them out by
+    hand would be ten keys per amendment of mostly `None`, which would obscure the facts the
+    fixtures exist to record.
+    """
+    return {**_FIELDS, **amendment}
+
+
 #: request_id -> the `amendments` array a correct extraction returns.
-RECORDED: dict[str, list[dict]] = {
+_CONCISE: dict[str, list[dict]] = {
     # "Gaji bulanan Anda naik menjadi IDR 42750000. Perubahan ini berlaku mulai 2025-08-15."
     "request_02": [
         {
@@ -166,4 +194,9 @@ RECORDED: dict[str, list[dict]] = {
     ],
     # Proceeds already credited and the claim is closed: nothing forward-looking.
     "request_24": [],
+}
+
+RECORDED: dict[str, list[dict]] = {
+    request_id: [_complete(amendment) for amendment in amendments]
+    for request_id, amendments in _CONCISE.items()
 }
