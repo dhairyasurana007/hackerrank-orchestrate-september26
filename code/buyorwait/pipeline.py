@@ -25,6 +25,7 @@ from .model.polish import polish_explanation
 from .model.vision import extract_amount
 from .records import Request
 from .state import UserState, build_state
+from .validator import validate_row
 from .writer import OutputRow, fallback_row
 
 
@@ -32,6 +33,7 @@ from .writer import OutputRow, fallback_row
 class RunReport:
     rows: list[OutputRow] = field(default_factory=list)
     failures: list[dict] = field(default_factory=list)
+    validation_fallbacks: list[dict] = field(default_factory=list)
 
     @property
     def fallback_rows(self) -> int:
@@ -46,6 +48,7 @@ class RunReport:
             "rows": len(self.rows),
             "fallback_rows": self.fallback_rows,
             "fallback_request_ids": self.fallback_request_ids,
+            "validation_fallbacks": self.validation_fallbacks,
             "failures": self.failures,
         }
 
@@ -243,9 +246,22 @@ class Engine:
 
 def run(engine: Engine, requests) -> RunReport:
     report = RunReport()
+    mvp_engine = Engine.build(engine.data, use_llm=False) if engine.use_llm else None
     for request in requests:
         try:
             row = engine.decide(request)
+            violations = _row_violations(engine, request, row)
+            if violations and mvp_engine is not None:
+                mvp_row = mvp_engine.decide(request)
+                mvp_violations = _row_violations(mvp_engine, request, mvp_row)
+                if not mvp_violations:
+                    report.validation_fallbacks.append(
+                        {
+                            "request_id": request.request_id,
+                            "violations": [str(v) for v in violations],
+                        }
+                    )
+                    row = mvp_row
         except Exception as error:  # noqa: BLE001 - the boundary is the point
             report.failures.append(
                 {
@@ -258,3 +274,8 @@ def run(engine: Engine, requests) -> RunReport:
             row = fallback_row(request.request_id)
         report.rows.append(row)
     return report
+
+
+def _row_violations(engine: Engine, request: Request, row: OutputRow):
+    profile = engine.data.profiles[request.user_id]
+    return validate_row(row.as_csv_dict(), request, profile, engine.data.options(request.request_id))

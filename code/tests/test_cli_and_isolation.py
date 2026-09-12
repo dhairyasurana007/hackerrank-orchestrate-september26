@@ -23,6 +23,7 @@ from buyorwait import loaders, paths
 from buyorwait.contract import OUTPUT_COLUMNS
 from buyorwait.pipeline import Engine, run
 from buyorwait.validator import validate_rows
+from buyorwait.writer import OutputRow
 
 DATASET = paths.find_dataset()
 MAIN = paths.code_dir() / "main.py"
@@ -110,6 +111,54 @@ class TestFailureIsolation(unittest.TestCase):
         report = run(Engine.build(self.data, use_llm=False), self.data.requests)
         self.assertEqual(report.fallback_rows, 0)
         self.assertEqual(report.failures, [])
+
+
+class _InvalidFinalEngine(Engine):
+    """A live Final engine that emits one contract-invalid row."""
+
+    def __init__(self, *args, doomed=(), **kwargs):
+        super().__init__(*args, **kwargs)
+        self.doomed = set(doomed)
+
+    def decide(self, request):
+        if request.request_id in self.doomed:
+            return OutputRow(
+                request_id=request.request_id,
+                amount_safe_to_pay=request.requested_amount + 1,
+                affordability_status="affordable_now",
+                recommended_payment_method="full_payment",
+                payment_plan=((request.request_date, request.requested_amount),),
+                earliest_date_for_full_payment=request.request_date,
+                decision_explanation="Rigged invalid Final row.",
+            )
+        return super().decide(request)
+
+
+class TestFinalValidationFallback(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.data = loaders.load_dataset(DATASET)
+
+    def _engine(self, doomed):
+        base = Engine.build(self.data, use_llm=True, client=None)
+        # No client is needed: the rigged row is injected before any model-dependent behavior
+        # matters, and all non-doomed rows still degrade to the deterministic path.
+        return _InvalidFinalEngine(
+            data=base.data, rates=base.rates, use_llm=True, client=None, doomed=doomed
+        )
+
+    def test_a_contract_invalid_final_row_falls_back_to_the_mvp_answer(self):
+        report = run(self._engine({"request_26"}), self.data.requests[:3])
+        row = next(row for row in report.rows if row.request_id == "request_26")
+        mvp = Engine.build(self.data, use_llm=False).decide(self.data.request("request_26"))
+        self.assertEqual(row.as_csv_dict(), mvp.as_csv_dict())
+        self.assertEqual(report.fallback_rows, 0)
+        self.assertEqual([item["request_id"] for item in report.validation_fallbacks], ["request_26"])
+
+    def test_final_validity_never_drops_below_the_mvp_for_any_emitted_row(self):
+        report = run(self._engine({"request_26"}), self.data.requests[:8])
+        rows = {row.request_id: row.as_csv_dict() for row in report.rows}
+        self.assertEqual([str(v) for v in validate_rows(rows, self.data)], [])
 
 
 class TestTheCliSurface(unittest.TestCase):
