@@ -1,0 +1,76 @@
+name: CI
+
+# Must run green with no API key: that is what makes it a usable gate on every push.
+# The scored run that needs OPENROUTER_API_KEY is the manual `scored-run` job below and is
+# never on the push path, so a missing or exhausted key can never block development.
+
+on:
+  push:
+    branches: [mvp, main]
+  pull_request:
+    branches: [mvp, main]
+  workflow_dispatch:
+
+env:
+  PYTHON_VERSION: "3.13"
+
+jobs:
+  tests:
+    name: tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      # Same command as the local full-suite run, so the two levels cannot drift.
+      - run: python -m unittest discover -s code/tests -t . -v
+
+  pipeline-offline:
+    name: pipeline-offline
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - name: Run the pipeline with no model layer
+        run: python code/main.py --no-llm
+      # Staged assertions (TASKS.md 2.3): --validate lands at M11, --no-fallback-rows at M13.
+      - name: Check the output contract
+        run: python code/evaluation/check_output.py output.csv --rows 250
+
+  scorers:
+    name: scorers
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      # Thresholds are enforced from inside this command as each scorer lands
+      # (drawdown at M5b, full-output at M12).
+      - name: Score against the solved samples
+        run: python code/main.py --samples --no-llm
+
+  scored-run:
+    name: scored-run (manual)
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - name: Run the pipeline with the model layer live
+        env:
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+        run: python code/main.py
+      - name: Check the output contract
+        run: python code/evaluation/check_output.py output.csv --rows 250
+      - uses: actions/upload-artifact@v4
+        with:
+          name: scored-output
+          path: |
+            output.csv
+            code/evaluation/usage_report.md
