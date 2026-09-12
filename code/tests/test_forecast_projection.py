@@ -208,16 +208,22 @@ class TestAgainstTheRealDataset(unittest.TestCase):
         )
 
     def test_projection_improves_on_the_recorded_explicit_only_baseline(self):
-        """The M7a baseline was median 100%, mean 94.2%. This must beat both."""
+        """The M7a baseline was median 100%, mean 94.2%. This must beat both.
+
+        The exact figures are the calibrated ones from M7c; the threshold file records how
+        each step got there.
+        """
         from evaluation import drawdown
 
         from buyorwait.pipeline import Engine
 
         report = drawdown.grade(Engine.build(self.data, use_llm=False).predicted_drawdown, self.data)
         self.assertLess(report.median_error, 1.0)
-        self.assertLess(report.mean_error, 0.9424)
-        self.assertAlmostEqual(report.median_error, 0.1480, places=3)
-        self.assertAlmostEqual(report.mean_error, 0.3209, places=3)
+        self.assertLess(report.mean_error, 0.9421)
+        self.assertAlmostEqual(report.median_error, 0.1125, places=3)
+        self.assertAlmostEqual(report.mean_error, 0.2897, places=3)
+        self.assertEqual(report.within(0.10), 9)
+        self.assertEqual(report.within(0.25), 16)
         self.assertEqual(report.bound_violations, [])
 
     def test_the_committed_threshold_is_met(self):

@@ -92,10 +92,27 @@ class TestCadenceDetection(unittest.TestCase):
         self.assertFalse(series.projects)
         self.assertIn("no stable interval", series.reason)
 
-    def test_two_occurrences_are_not_enough(self):
-        series = _one(_monthly(2, 10, 100.0), dt.date(2025, 3, 1))
+    def test_two_occurrences_with_different_amounts_are_not_enough(self):
+        events = _monthly(2, 10, 100.0)
+        events[1] = _event("event_1", dt.date(2025, 2, 10), 250.0)
+        series = _one(events, dt.date(2025, 3, 1))
         self.assertFalse(series.projects)
         self.assertIn("needs 3", series.reason)
+
+    def test_two_identical_occurrences_are_enough(self):
+        """The narrow relaxation of M7c: identical repeats are stronger evidence."""
+        series = _one(_monthly(2, 10, 100.0), dt.date(2025, 3, 1))
+        self.assertTrue(series.projects, series.reason)
+        self.assertAlmostEqual(series.amount, 100.0)
+
+    def test_the_relaxation_never_reaches_a_three_occurrence_series(self):
+        """It is not the variance gate PLAN.md 5.5 rules out."""
+        events = _monthly(5, 15, 1422.85, direction="credit", category="salary",
+                          description="Payroll credit")
+        events[-1] = _event("event_4", dt.date(2025, 5, 15), 782.57, direction="credit",
+                            category="salary", description="Payroll credit")
+        series = _one(events, dt.date(2025, 6, 7))
+        self.assertTrue(series.projects, series.reason)
 
     def test_a_monthly_anchor_past_the_end_of_a_short_month_is_clamped(self):
         events = [
@@ -237,7 +254,13 @@ class TestTheSixDiagnosedFailures(unittest.TestCase):
         series = _detect(events, dt.date(2025, 8, 4))
         self.assertTrue(all(not s.projects for s in series))
 
-    def test_user_15_a_series_existing_only_in_evidence_has_nothing_to_detect(self):
+    def test_user_15_two_identical_first_job_payrolls_do_project(self):
+        """Calibrated at M7c: identical repeats clear the minimum, unequal ones do not.
+
+        This is the case that motivated the relaxation. The message confirming the first
+        salary still matters at M15 - it is what makes the *date* certain - but the amount
+        and cadence are now recoverable from history alone.
+        """
         events = [
             _event("event_0", dt.date(2025, 11, 15), 1661.0, direction="credit", category="salary",
                    description="First-job payroll"),
@@ -245,8 +268,8 @@ class TestTheSixDiagnosedFailures(unittest.TestCase):
                    description="First-job payroll"),
         ]
         series = _one(events, dt.date(2026, 1, 6))
-        self.assertFalse(series.projects)
-        self.assertIn("needs 3", series.reason)
+        self.assertTrue(series.projects, series.reason)
+        self.assertAlmostEqual(series.amount, 1661.0)
 
 
 class TestTheGuardCase(unittest.TestCase):
@@ -313,6 +336,9 @@ class TestAgainstTheRealDataset(unittest.TestCase):
         self.assertAlmostEqual(salary.amount, 1294.79, places=2)
 
     def test_user_11_projects_base_pay_and_neither_commission(self):
+        """The commission with two occurrences must stay out: IDR 20.0M then 8.5M is not an
+        identical repeat, which is exactly why the M7c relaxation is conditioned on equality.
+        """
         series = self._series_for("user_11")
         self.assertTrue(series[("credit", "salary", "base salary")].projects)
         self.assertAlmostEqual(series[("credit", "salary", "base salary")].amount, 23256000.0)
@@ -324,11 +350,20 @@ class TestAgainstTheRealDataset(unittest.TestCase):
         self.assertTrue(series[("credit", "salary", "primary household salary")].projects)
         self.assertFalse(series[("credit", "salary", "second household income")].projects)
 
-    def test_user_14_and_user_15_project_no_income_from_history_alone(self):
-        for user_id in ("user_14", "user_15"):
-            with self.subTest(user=user_id):
-                income = [s for s in self._series_for(user_id).values() if s.is_income]
-                self.assertTrue(all(not s.projects for s in income))
+    def test_user_14_projects_no_income_from_history_alone(self):
+        """Two payrolls before leave, stale by August, and one after: nothing to project.
+
+        The resumption on 2025-08-15 is a message fact, and M15's amendment is what supplies
+        it. The structural layer declines rather than inventing.
+        """
+        income = [s for s in self._series_for("user_14").values() if s.is_income]
+        self.assertTrue(income)
+        self.assertTrue(all(not s.projects for s in income))
+
+    def test_user_15_projects_its_identical_first_job_payroll(self):
+        income = [s for s in self._series_for("user_15").values() if s.is_income and s.projects]
+        self.assertEqual(len(income), 1)
+        self.assertAlmostEqual(income[0].amount, 1661.0)
 
     def test_expense_recurrence_is_detected_for_every_sample_user(self):
         for request in self.data.samples:
