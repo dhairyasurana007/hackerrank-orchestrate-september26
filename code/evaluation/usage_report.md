@@ -1,6 +1,6 @@
 # Token usage and cost
 
-Generated 2026-09-12 22:11 UTC from `evaluation/model_run_log.jsonl`, one record per model
+Generated 2026-09-12 22:49 UTC from `evaluation/model_run_log.jsonl`, one record per model
 call. Every figure below is read out of that log rather than written by hand, so the
 totals reconcile with the run by construction.
 
@@ -13,7 +13,7 @@ live model list by `scripts/confirm_models.py`.
 
 | Model | Role | Input $/M tokens | Output $/M tokens |
 |---|---|---|---|
-| `openai/gpt-4.1-mini` | message extraction | 0.40 | 1.60 |
+| `openai/gpt-4.1-mini` | message extraction and explanation polish | 0.40 | 1.60 |
 | `openai/gpt-4.1` | document extraction | 2.00 | 8.00 |
 
 ## This run

@@ -51,7 +51,7 @@ class ModelSpec:
 #: Message extraction. Used by the MVP and by FINAL.
 TEXT_MODEL = ModelSpec(
     model_id="openai/gpt-4.1-mini",
-    role="message extraction",
+    role="message extraction and explanation polish",
     input_usd_per_million=0.40,
     output_usd_per_million=1.60,
     supports_temperature=True,

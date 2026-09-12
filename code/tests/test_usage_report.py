@@ -116,6 +116,7 @@ class TestTheRenderedReport(unittest.TestCase):
         for required in (
             "OpenRouter",
             "openai/gpt-4.1-mini",
+            "message extraction and explanation polish",
             "Model calls",
             "Input tokens",
             "Output tokens",
