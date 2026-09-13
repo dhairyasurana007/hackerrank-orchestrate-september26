@@ -2,8 +2,10 @@ let bundle;
 let selectedId;
 let uploadedTable = null;
 let selectedUploadIndex = 0;
+let pendingAssistantTimer = null;
 
 const moneyFormatters = new Map();
+const CHAT_RESPONSE_DELAY_MS = 650;
 const TYPE_LABELS = {
   debt_repayment: "Debt repayment",
   education: "Education payment",
@@ -94,7 +96,7 @@ function wireEvents() {
     if (!prompt) return;
     input.value = "";
     appendMessage("user", prompt);
-    setTimeout(() => appendMessage("assistant", answerPrompt(prompt)), 120);
+    queueAssistantResponse(() => answerPrompt(prompt));
   });
   document.querySelectorAll(".tab").forEach((button) => {
     button.addEventListener("click", () => {
@@ -220,8 +222,7 @@ function renderSelected({ resetChat = false } = {}) {
 }
 
 function resetThread(item) {
-  byId("chatThread").innerHTML = "";
-  appendMessage("assistant", openingAnswer(item));
+  queueAssistantResponse(() => openingAnswer(item), { clearThread: true });
 }
 
 function openingAnswer(item) {
@@ -229,10 +230,13 @@ function openingAnswer(item) {
   const currency = item.profile.home_currency;
   const amount = fmtMoney(item.request.requested_amount, currency);
   const safe = fmtMoney(row.amount_safe_to_pay, currency);
+  const fullDate = row.earliest_date_for_full_payment
+    ? `Full payment date: ${row.earliest_date_for_full_payment}.`
+    : "No safe full-payment date in the forecast.";
   return [
-    `For ${requestTitle(item)} (${item.request.request_id}), I would ${plainRecommendation(row)}.`,
-    `The request is for ${amount}. Safe to pay today is ${safe}.`,
-    row.decision_explanation,
+    `${requestTitle(item)} (${item.request.request_id})`,
+    `Recommendation: ${conciseRecommendation(row)}.`,
+    `Safe today: ${safe} of ${amount}. ${fullDate}`,
   ].join("\n\n");
 }
 
@@ -246,9 +250,41 @@ function renderPromptChips() {
   document.querySelectorAll(".prompt-chip").forEach((button) => {
     button.addEventListener("click", () => {
       appendMessage("user", button.textContent);
-      setTimeout(() => appendMessage("assistant", answerPrompt(button.textContent)), 120);
+      queueAssistantResponse(() => answerPrompt(button.textContent));
     });
   });
+}
+
+function queueAssistantResponse(contentFactory, { clearThread = false } = {}) {
+  clearPendingAssistant();
+  const thread = byId("chatThread");
+  if (clearThread) {
+    thread.innerHTML = "";
+  }
+  const typing = appendTypingIndicator();
+  pendingAssistantTimer = window.setTimeout(() => {
+    typing.remove();
+    pendingAssistantTimer = null;
+    appendMessage("assistant", contentFactory());
+  }, CHAT_RESPONSE_DELAY_MS);
+}
+
+function clearPendingAssistant() {
+  if (pendingAssistantTimer !== null) {
+    window.clearTimeout(pendingAssistantTimer);
+    pendingAssistantTimer = null;
+  }
+  document.querySelectorAll(".typing-indicator").forEach((node) => node.remove());
+}
+
+function appendTypingIndicator() {
+  const node = document.createElement("article");
+  node.className = "message assistant typing-indicator";
+  node.setAttribute("aria-label", "Thinking");
+  node.innerHTML = '<span></span><span></span><span></span>';
+  byId("chatThread").appendChild(node);
+  node.scrollIntoView({ block: "end" });
+  return node;
 }
 
 function appendMessage(role, content) {
@@ -590,6 +626,21 @@ function plainRecommendation(row) {
   }
 }
 
+function conciseRecommendation(row) {
+  switch (row.recommended_payment_method) {
+    case "full_payment":
+      return "pay in full";
+    case "partial_payment":
+      return "use partial payment";
+    case "installments":
+      return "use installments";
+    case "wait":
+      return "wait";
+    default:
+      return "do not proceed";
+  }
+}
+
 function humanStatus(status) {
   return (
     {
@@ -830,8 +881,7 @@ function renderUploadedSelected({ resetChat = false } = {}) {
   );
   byId("usageReport").textContent = "CSV upload mode is local-only: no server upload, no model calls, no token usage.";
   if (resetChat) {
-    byId("chatThread").innerHTML = "";
-    appendMessage("assistant", openingUploadedAnswer(row));
+    queueAssistantResponse(() => openingUploadedAnswer(row), { clearThread: true });
   }
 }
 
@@ -869,9 +919,9 @@ function renderUploadedChart() {
 
 function openingUploadedAnswer(row) {
   return [
-    `I loaded ${uploadedTable.name}. You can ask about any row or column in the CSV.`,
-    `Right now I am looking at row ${selectedUploadIndex + 1}: ${uploadedRowCompact(row)}.`,
-    "Try: “summarize this row”, “show row 5”, “what columns are available?”, or “find expensive rows”.",
+    `${uploadedTable.name}`,
+    `Viewing row ${selectedUploadIndex + 1}: ${uploadedRowCompact(row)}.`,
+    "Ask about a row, column, recommendation field, or chart.",
   ].join("\n\n");
 }
 

@@ -419,31 +419,7 @@ final run rather than assumed. Around the client sit four fixed guarantees:
 
 ### 5.7 Observability
 
-Observability is built in, not bought. **No LangChain and no LangSmith** — recorded here because
-both were considered and rejected on grounds that would otherwise be re-litigated mid-build.
-
-**Why not LangChain.** The model layer is one `POST /chat/completions` per call with a JSON
-schema. There are no chains, agents, retrieval, memory, or tool calls to orchestrate — the
-architecture deliberately keeps the model out of control flow (§5.5). An orchestration framework
-would add a dependency and a version surface while inserting indirection between the code and the
-raw response, including the `usage` block the required cost report is built from.
-
-**Why not LangSmith.** Every need it would serve is already met by something this project builds
-anyway, in two cases because the brief requires it:
-
-| Need | Met by |
-|---|---|
-| Inspect what an extraction returned and what it changed | the decision bundle (§9.1), which shows the amendment beside the curve and the resulting decision — the LLM call in isolation is the less useful view |
-| Token and cost accounting | `evaluation/usage_report.md`, a required deliverable built from OpenRouter's per-response `usage` block |
-| Debug a specific call | the content-hash cache, which already persists every prompt and response to disk — greppable, offline, no account |
-| Evaluate quality | the drawdown harness (§5.4) and the full-output scorer (§6.1), both grounded in real ground truth |
-
-Adding it would introduce a second account and API key to keep out of a public repository, a
-network dependency in the hot path, and outbound transmission of financial records and message
-text to a third party — none of which is required, and the last of which is worth avoiding on
-principle for data of this kind.
-
-**What is built instead.** A structured run log, written as JSONL, one record per model call:
+Observability is built in through a structured run log, written as JSONL, one record per model call:
 request hash, model ID, cache hit or miss, input and output tokens, reported cost, latency,
 schema-validation outcome, and for every dropped amendment the reason it was dropped. Cost is
 near-zero because `usage_report.md` is generated directly from it — the observability is a
