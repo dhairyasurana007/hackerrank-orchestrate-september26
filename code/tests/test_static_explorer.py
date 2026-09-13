@@ -62,8 +62,11 @@ class StaticExplorerTest(unittest.TestCase):
         self.assertIn('id="chatForm"', html)
         self.assertIn('id="chatInput"', html)
         self.assertIn('id="csvUpload"', html)
+        self.assertIn("View chart data", script)
+        self.assertNotIn('id="detailsToggle"', html)
         self.assertIn("answerPrompt", script)
         self.assertIn("parseCsv", script)
+        self.assertIn("chartAnswer", script)
         self.assertIn("answerUploadedPrompt", script)
         self.assertIn("appendMessage", script)
 

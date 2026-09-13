@@ -99,7 +99,7 @@ h3 {
 
 .app-shell {
   display: grid;
-  grid-template-columns: 300px minmax(420px, 1fr) 420px;
+  grid-template-columns: 300px minmax(420px, 1fr);
   min-height: calc(100vh - 73px);
 }
 
@@ -118,7 +118,7 @@ h3 {
 }
 
 .context-panel {
-  border-left: 1px solid var(--line);
+  display: none;
 }
 
 .search-row input,
@@ -266,17 +266,6 @@ h3 {
   border-bottom: 1px solid var(--line);
   background: rgba(255, 255, 255, 0.78);
   backdrop-filter: blur(12px);
-}
-
-.icon-button {
-  border: 1px solid var(--line);
-  background: #fff;
-  color: var(--ink);
-  width: 36px;
-  height: 36px;
-  border-radius: 50%;
-  cursor: pointer;
-  font-weight: 800;
 }
 
 .thread {
@@ -572,20 +561,6 @@ th {
 
   .app-shell {
     grid-template-columns: 260px minmax(0, 1fr);
-  }
-
-  .context-panel {
-    display: none;
-    position: fixed;
-    right: 0;
-    top: 73px;
-    bottom: 0;
-    width: min(430px, 100vw);
-    z-index: 30;
-  }
-
-  .context-panel.open {
-    display: block;
   }
 }
 

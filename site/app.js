@@ -85,9 +85,6 @@ function wireEvents() {
     appendMessage("user", prompt);
     setTimeout(() => appendMessage("assistant", answerPrompt(prompt)), 120);
   });
-  byId("detailsToggle").addEventListener("click", () => {
-    byId("contextPanel").classList.toggle("open");
-  });
   document.querySelectorAll(".tab").forEach((button) => {
     button.addEventListener("click", () => {
       document.querySelectorAll(".tab").forEach((tab) => tab.classList.remove("active"));
@@ -229,8 +226,8 @@ function openingAnswer(item) {
 
 function renderPromptChips() {
   const chips = uploadedTable
-    ? ["Summarize this row", "What columns are in this CSV?", "Find expensive rows", "Show row 5"]
-    : ["Why?", "What is the payment plan?", "What could make it affordable?", "Show not affordable cases"];
+    ? ["Summarize this row", "What columns are in this CSV?", "Find expensive rows", "View chart data", "Show row 5"]
+    : ["Why?", "What is the payment plan?", "What could make it affordable?", "View chart data", "Show not affordable cases"];
   byId("promptChips").innerHTML = chips
     .map((chip) => `<button type="button" class="prompt-chip">${chip}</button>`)
     .join("");
@@ -274,6 +271,9 @@ function answerPrompt(prompt) {
   if (mentionsPlan(lower)) {
     return planAnswer(item);
   }
+  if (mentionsChart(lower)) {
+    return chartAnswer(item);
+  }
   if (mentionsWhy(lower)) {
     return whyAnswer(item);
   }
@@ -315,6 +315,10 @@ function mentionsAlternatives(lower) {
 
 function mentionsCompare(lower) {
   return /best|largest|smallest|most expensive|cheapest|highest|lowest/.test(lower);
+}
+
+function mentionsChart(lower) {
+  return /chart|graph|curve|trough|floor|data point|forecast/.test(lower);
 }
 
 function directAnswer(item) {
@@ -362,6 +366,23 @@ function evidenceAnswer(item) {
     firstMessage
       ? `Most recent useful message shown here: "${firstMessage.message_text}"`
       : "There is no request-scoped message text for this one.",
+  ].join("\n\n");
+}
+
+function chartAnswer(item) {
+  const currency = item.profile.home_currency;
+  const curve = item.curve || [];
+  const points = [0, 7, 14, 30, 60, curve.length - 1]
+    .filter((index, position, all) => index >= 0 && index < curve.length && all.indexOf(index) === position)
+    .map((index) => `${curve[index].date}: ${fmtMoney(curve[index].balance, currency)}`);
+  const payments = paymentMarkers(item.finalDecision.payment_plan)
+    .map((payment) => `${fmtMoney(payment.amount, currency)} on ${payment.date}`)
+    .join("; ");
+  return [
+    `Chart data for ${item.request.request_id}:`,
+    `Opening balance: ${fmtMoney(curve[0]?.balance || item.profile.current_available_balance, currency)}. Floor: ${fmtMoney(item.floor, currency)}. Trough: ${fmtMoney(item.trough.balance, currency)} on ${item.trough.date}.`,
+    points.length ? `Sample forecast points:\n${points.join("\n")}` : "No curve points are available.",
+    payments ? `Planned payment markers: ${payments}.` : "No payment markers are on the chart.",
   ].join("\n\n");
 }
 
@@ -756,6 +777,9 @@ function answerUploadedPrompt(prompt) {
   if (/column|schema|field|header/.test(lower)) {
     return `This CSV has ${uploadedTable.columns.length} column(s):\n\n${uploadedTable.columns.join(", ")}`;
   }
+  if (mentionsChart(lower)) {
+    return uploadedChartAnswer();
+  }
   if (/summary|overview|how many|dataset/.test(lower)) {
     return uploadedDatasetSummary();
   }
@@ -779,6 +803,29 @@ function uploadedDatasetSummary() {
     `${uploadedTable.name} has ${uploadedTable.rows.length} row(s) and ${uploadedTable.columns.length} column(s).`,
     numericColumns.length ? `Numeric-looking columns: ${numericColumns.join(", ")}.` : "I did not detect numeric columns.",
     `Current row: ${uploadedRowCompact(selected())}.`,
+  ].join("\n\n");
+}
+
+function uploadedChartAnswer() {
+  const numericColumn = uploadedBestNumericColumn();
+  if (!numericColumn) {
+    return "I do not see a numeric column to chart in this CSV.";
+  }
+  const ranked = uploadedTable.rows
+    .map((row, index) => ({ row, index, value: parseLooseNumber(row[numericColumn]) }))
+    .filter((item) => item.value !== null);
+  const values = ranked.map((item) => item.value);
+  const min = Math.min(...values);
+  const max = Math.max(...values);
+  const current = parseLooseNumber(selected()[numericColumn]);
+  const points = ranked
+    .slice(0, 8)
+    .map((item) => `row ${item.index + 1}: ${item.value} · ${uploadedRowTitle(item.row, item.index)}`)
+    .join("\n");
+  return [
+    `Chart data uses the numeric column "${numericColumn}".`,
+    `Range: ${min} to ${max}. Current row value: ${current === null ? "blank" : current}.`,
+    `First chart points:\n${points}`,
   ].join("\n\n");
 }
 
