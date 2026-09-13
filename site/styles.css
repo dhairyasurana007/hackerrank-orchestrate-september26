@@ -211,6 +211,13 @@ h3 {
   margin-bottom: 6px;
 }
 
+.request-key {
+  display: block;
+  color: var(--muted);
+  font-size: 12px;
+  margin: -1px 0 4px;
+}
+
 .badge {
   display: inline-flex;
   align-items: center;
@@ -289,6 +296,10 @@ h3 {
 
 .message p {
   white-space: pre-wrap;
+}
+
+.message.rich {
+  max-width: 820px;
 }
 
 .message.assistant {
@@ -422,6 +433,46 @@ h3 {
 
 .dot.pay {
   background: var(--green);
+}
+
+.dot.trough {
+  background: var(--amber);
+}
+
+.chat-chart {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #f8fafc;
+  margin-top: 12px;
+  overflow: hidden;
+}
+
+.chat-chart-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+  padding: 10px 12px 8px;
+  border-bottom: 1px solid var(--line);
+}
+
+.chat-chart-head span,
+.chat-chart-legend {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.chat-chart svg {
+  display: block;
+  width: 100%;
+  min-height: 210px;
+}
+
+.chat-chart-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding: 0 12px 10px;
 }
 
 .chart-wrap {

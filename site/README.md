@@ -16,3 +16,9 @@ python -m http.server 8765
 ```
 
 Then open `http://127.0.0.1:8765/site/`.
+
+When GitHub Pages is enabled for this repository, the deployed site is available at:
+
+```text
+https://dhairyasurana007.github.io/hackerrank-orchestrate-september26/
+```

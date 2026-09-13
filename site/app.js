@@ -4,6 +4,17 @@ let uploadedTable = null;
 let selectedUploadIndex = 0;
 
 const moneyFormatters = new Map();
+const TYPE_LABELS = {
+  debt_repayment: "Debt repayment",
+  education: "Education payment",
+  emergency_expense: "Emergency expense",
+  family_transfer: "Family transfer",
+  housing: "Housing payment",
+  investment: "Investment contribution",
+  other: "Other payment",
+  purchase: "Purchase",
+  travel: "Travel booking",
+};
 
 function byId(id) {
   return document.getElementById(id);
@@ -163,7 +174,8 @@ function renderList() {
       const row = item.finalDecision;
       const active = item.request.request_id === selectedId ? " active" : "";
       return `<button class="request-item${active}" data-request="${item.request.request_id}">
-        <strong><span>${item.request.request_id}</span><span>${fmtMoney(item.request.requested_amount, item.profile.home_currency)}</span></strong>
+        <strong><span>${escapeHtml(requestTitle(item))}</span><span>${fmtMoney(item.request.requested_amount, item.profile.home_currency)}</span></strong>
+        <span class="request-key">${escapeHtml(item.request.request_id)}</span>
         <span class="badge ${row.affordability_status}">${humanStatus(row.affordability_status)}</span>
         <span class="badge ${row.recommended_payment_method}">${humanMethod(row.recommended_payment_method)}</span>
       </button>`;
@@ -186,8 +198,8 @@ function renderSelected({ resetChat = false } = {}) {
   const item = selected();
   const row = item.finalDecision;
   const currency = item.profile.home_currency;
-  byId("selectedMeta").textContent = `${item.request.user_id} · ${item.request.request_type} · ${item.request.request_date}`;
-  byId("selectedTitle").innerHTML = `${item.request.request_id}: <span class="badge ${row.affordability_status}">${humanStatus(row.affordability_status)}</span>`;
+  byId("selectedMeta").textContent = `${item.request.request_id} · ${item.request.user_id} · ${item.request.request_type} · ${item.request.request_date}`;
+  byId("selectedTitle").innerHTML = `${escapeHtml(requestTitle(item))} <span class="badge ${row.affordability_status}">${humanStatus(row.affordability_status)}</span>`;
   byId("metricGrid").innerHTML = [
     ["Requested", fmtMoney(item.request.requested_amount, currency)],
     ["Safe today", fmtMoney(row.amount_safe_to_pay, currency)],
@@ -218,7 +230,7 @@ function openingAnswer(item) {
   const amount = fmtMoney(item.request.requested_amount, currency);
   const safe = fmtMoney(row.amount_safe_to_pay, currency);
   return [
-    `For ${item.request.request_id}, I would ${plainRecommendation(row)}.`,
+    `For ${requestTitle(item)} (${item.request.request_id}), I would ${plainRecommendation(row)}.`,
     `The request is for ${amount}. Safe to pay today is ${safe}.`,
     row.decision_explanation,
   ].join("\n\n");
@@ -242,10 +254,15 @@ function renderPromptChips() {
 function appendMessage(role, content) {
   const node = document.createElement("article");
   node.className = `message ${role}`;
-  node.innerHTML = content
-    .split("\n\n")
-    .map((paragraph) => `<p>${escapeHtml(paragraph)}</p>`)
-    .join("");
+  if (role === "assistant" && content && typeof content === "object" && content.html) {
+    node.classList.add("rich");
+    node.innerHTML = content.html;
+  } else {
+    node.innerHTML = String(content)
+      .split("\n\n")
+      .map((paragraph) => `<p>${escapeHtml(paragraph)}</p>`)
+      .join("");
+  }
   byId("chatThread").appendChild(node);
   node.scrollIntoView({ block: "end" });
 }
@@ -325,7 +342,7 @@ function directAnswer(item) {
   const row = item.finalDecision;
   const currency = item.profile.home_currency;
   return [
-    `I would ${plainRecommendation(row)} for ${item.request.request_id}.`,
+    `I would ${plainRecommendation(row)} for ${requestTitle(item)} (${item.request.request_id}).`,
     `Requested: ${fmtMoney(item.request.requested_amount, currency)}. Safe today: ${fmtMoney(row.amount_safe_to_pay, currency)}. Status: ${humanStatus(row.affordability_status)}.`,
     shortPlan(row, currency),
   ].join("\n\n");
@@ -362,7 +379,7 @@ function evidenceAnswer(item) {
   const amendments = item.appliedAmendments.length;
   const firstMessage = item.evidence.messages[0];
   return [
-    `I found ${messages} message(s), ${images} image document(s), and ${amendments} applied amendment(s) in scope for ${item.request.request_id}.`,
+    `I found ${messages} message(s), ${images} image document(s), and ${amendments} applied amendment(s) in scope for ${requestTitle(item)} (${item.request.request_id}).`,
     firstMessage
       ? `Most recent useful message shown here: "${firstMessage.message_text}"`
       : "There is no request-scoped message text for this one.",
@@ -372,18 +389,122 @@ function evidenceAnswer(item) {
 function chartAnswer(item) {
   const currency = item.profile.home_currency;
   const curve = item.curve || [];
-  const points = [0, 7, 14, 30, 60, curve.length - 1]
+  const samplePoints = [0, 7, 14, 30, 60, curve.length - 1]
     .filter((index, position, all) => index >= 0 && index < curve.length && all.indexOf(index) === position)
     .map((index) => `${curve[index].date}: ${fmtMoney(curve[index].balance, currency)}`);
   const payments = paymentMarkers(item.finalDecision.payment_plan)
     .map((payment) => `${fmtMoney(payment.amount, currency)} on ${payment.date}`)
     .join("; ");
-  return [
-    `Chart data for ${item.request.request_id}:`,
-    `Opening balance: ${fmtMoney(curve[0]?.balance || item.profile.current_available_balance, currency)}. Floor: ${fmtMoney(item.floor, currency)}. Trough: ${fmtMoney(item.trough.balance, currency)} on ${item.trough.date}.`,
-    points.length ? `Sample forecast points:\n${points.join("\n")}` : "No curve points are available.",
-    payments ? `Planned payment markers: ${payments}.` : "No payment markers are on the chart.",
-  ].join("\n\n");
+  return richAssistantMessage(
+    [
+      `Here is the balance forecast for ${requestTitle(item)} (${item.request.request_id}).`,
+      `Opening balance: ${fmtMoney(curve[0]?.balance || item.profile.current_available_balance, currency)}. Floor: ${fmtMoney(item.floor, currency)}. Trough: ${fmtMoney(item.trough.balance, currency)} on ${item.trough.date}.`,
+      payments ? `Planned payment markers: ${payments}.` : "No payment markers are on the chart.",
+      samplePoints.length ? `Sample points: ${samplePoints.join(" | ")}` : "No curve points are available.",
+    ],
+    forecastChartHtml(item)
+  );
+}
+
+function richAssistantMessage(paragraphs, htmlBlock) {
+  return {
+    html: paragraphs.map((paragraph) => `<p>${escapeHtml(paragraph)}</p>`).join("") + htmlBlock,
+  };
+}
+
+function forecastChartHtml(item) {
+  const chart = balanceChartSvg({
+    curve: item.curve || [],
+    floor: Number(item.floor),
+    trough: item.trough,
+    payments: paymentMarkers(item.finalDecision.payment_plan),
+    currency: item.profile.home_currency,
+  });
+  return `
+    <div class="chat-chart">
+      <div class="chat-chart-head">
+        <strong>Balance forecast</strong>
+        <span>${escapeHtml(item.request.request_date)} to ${escapeHtml(item.trough.through)}</span>
+      </div>
+      ${chart}
+      <div class="chat-chart-legend">
+        <span><i class="dot balance"></i>Balance</span>
+        <span><i class="dot floor"></i>Floor</span>
+        <span><i class="dot pay"></i>Payment</span>
+        <span><i class="dot trough"></i>Trough</span>
+      </div>
+    </div>
+  `;
+}
+
+function balanceChartSvg({ curve, floor, trough, payments, currency }) {
+  if (!curve.length) {
+    return `<svg viewBox="0 0 640 220" role="img" aria-label="Empty forecast chart"><text x="28" y="112" fill="var(--muted)" font-size="16">No chart points available.</text></svg>`;
+  }
+  const values = curve.map((point) => Number(point.balance)).concat([floor]);
+  const min = Math.min(...values);
+  const max = Math.max(...values);
+  const pad = Math.max((max - min) * 0.08, 1);
+  const yMin = min - pad;
+  const yMax = max + pad;
+  const width = 640;
+  const height = 220;
+  const margin = { left: 52, right: 16, top: 14, bottom: 32 };
+  const innerW = width - margin.left - margin.right;
+  const innerH = height - margin.top - margin.bottom;
+  const x = (index) => margin.left + (innerW * index) / Math.max(curve.length - 1, 1);
+  const y = (value) => margin.top + innerH - ((value - yMin) / (yMax - yMin)) * innerH;
+  const path = curve
+    .map((point, index) => `${index ? "L" : "M"}${x(index).toFixed(1)},${y(Number(point.balance)).toFixed(1)}`)
+    .join(" ");
+  const floorY = y(floor);
+  const troughIndex = Math.max(
+    curve.findIndex((point) => point.date === trough.date),
+    0
+  );
+  const paymentDots = payments
+    .map((payment) => {
+      const index = curve.findIndex((point) => point.date === payment.date);
+      if (index < 0) return "";
+      const label = `${payment.date}: ${fmtMoney(payment.amount, currency)}`;
+      return `<circle cx="${x(index)}" cy="${y(Number(curve[index].balance)).toFixed(1)}" r="5" fill="var(--green)"><title>${escapeHtml(label)}</title></circle>`;
+    })
+    .join("");
+  const troughLabel = `Trough ${trough.date}: ${fmtMoney(trough.balance, currency)}`;
+  return `
+    <svg viewBox="0 0 ${width} ${height}" role="img" aria-label="Forecast balance chart">
+      <rect x="0" y="0" width="${width}" height="${height}" rx="8" fill="#fff"></rect>
+      <line x1="${margin.left}" y1="${floorY.toFixed(1)}" x2="${width - margin.right}" y2="${floorY.toFixed(1)}" stroke="var(--red)" stroke-dasharray="7 5"></line>
+      <path d="${path}" fill="none" stroke="var(--blue)" stroke-width="3"></path>
+      ${paymentDots}
+      <circle cx="${x(troughIndex)}" cy="${y(Number(trough.balance)).toFixed(1)}" r="6" fill="var(--amber)"><title>${escapeHtml(troughLabel)}</title></circle>
+      <text x="${margin.left}" y="${height - 10}" fill="var(--muted)" font-size="11">${escapeHtml(curve[0].date)}</text>
+      <text x="${width - margin.right}" y="${height - 10}" fill="var(--muted)" font-size="11" text-anchor="end">${escapeHtml(curve[curve.length - 1].date)}</text>
+      <text x="8" y="${Math.max(14, floorY - 6).toFixed(1)}" fill="var(--red)" font-size="11">floor</text>
+    </svg>
+  `;
+}
+
+function requestTitle(item) {
+  const request = item.request || {};
+  const lower = String(request.request_text || "").toLowerCase();
+  const phraseRules = [
+    [/laptop|laptop yang saya incar/i, "Laptop purchase"],
+    [/family trip|travel option|book the trip|book.*family trip|trip/i, "Family trip"],
+    [/professional course|course fee|course/i, "Course fee"],
+    [/rental deposit|full deposit|deposit|move requires/i, "Housing deposit"],
+    [/repair bill|urgent repair|repair/i, "Urgent repair"],
+    [/loan payment|additional loan|debt/i, "Loan repayment"],
+    [/investment contribution|investing this amount|opportunity to invest|invest/i, "Investment contribution"],
+  ];
+  const matched = phraseRules.find(([pattern]) => pattern.test(lower));
+  if (matched) return matched[1];
+  if (request.request_type === "family_transfer" || /family|transfer/.test(lower)) return "Family transfer";
+  return TYPE_LABELS[request.request_type] || titleCase(String(request.request_type || "Request").replaceAll("_", " "));
+}
+
+function titleCase(value) {
+  return value.replace(/\b[a-z]/g, (letter) => letter.toUpperCase());
 }
 
 function alternativeAnswer(item) {
@@ -415,7 +536,7 @@ function compareAnswer(lower) {
   }
   const lines = items.slice(0, 5).map((item) => {
     const row = item.finalDecision;
-    return `${item.request.request_id}: ${fmtMoney(item.request.requested_amount, item.profile.home_currency)} · ${humanStatus(row.affordability_status)} · ${humanMethod(row.recommended_payment_method)}`;
+    return `${requestTitle(item)} (${item.request.request_id}): ${fmtMoney(item.request.requested_amount, item.profile.home_currency)} · ${humanStatus(row.affordability_status)} · ${humanMethod(row.recommended_payment_method)}`;
   });
   return `Here are the top matches:\n\n${lines.join("\n")}\n\nSay a request id to switch to it.`;
 }
@@ -435,7 +556,7 @@ function portfolioAnswer(lower) {
     : bundle.requests.slice(0, 8);
   const lines = items.slice(0, 8).map((item) => {
     const row = item.finalDecision;
-    return `${item.request.request_id}: ${humanStatus(row.affordability_status)}, ${humanMethod(row.recommended_payment_method)}, ${fmtMoney(item.request.requested_amount, item.profile.home_currency)}`;
+    return `${requestTitle(item)} (${item.request.request_id}): ${humanStatus(row.affordability_status)}, ${humanMethod(row.recommended_payment_method)}, ${fmtMoney(item.request.requested_amount, item.profile.home_currency)}`;
   });
   return [
     status ? `I found ${items.length} ${humanStatus(status).toLowerCase()} request(s).` : `There are ${bundle.metadata.request_count} requests in the bundle.`,
@@ -822,11 +943,57 @@ function uploadedChartAnswer() {
     .slice(0, 8)
     .map((item) => `row ${item.index + 1}: ${item.value} · ${uploadedRowTitle(item.row, item.index)}`)
     .join("\n");
-  return [
-    `Chart data uses the numeric column "${numericColumn}".`,
-    `Range: ${min} to ${max}. Current row value: ${current === null ? "blank" : current}.`,
-    `First chart points:\n${points}`,
-  ].join("\n\n");
+  return richAssistantMessage(
+    [
+      `Here is a chart from the uploaded CSV using "${numericColumn}".`,
+      `Range: ${min} to ${max}. Current row value: ${current === null ? "blank" : current}.`,
+      `First chart points: ${points.replaceAll("\n", " | ")}`,
+    ],
+    uploadedChartHtml(numericColumn, ranked)
+  );
+}
+
+function uploadedChartHtml(numericColumn, ranked) {
+  const values = ranked.map((item) => item.value);
+  const min = Math.min(...values);
+  const max = Math.max(...values);
+  const pad = Math.max((max - min) * 0.08, 1);
+  const yMin = min - pad;
+  const yMax = max + pad;
+  const width = 640;
+  const height = 220;
+  const margin = { left: 48, right: 16, top: 14, bottom: 32 };
+  const innerW = width - margin.left - margin.right;
+  const innerH = height - margin.top - margin.bottom;
+  const x = (index) => margin.left + (innerW * index) / Math.max(values.length - 1, 1);
+  const y = (value) => margin.top + innerH - ((value - yMin) / (yMax - yMin)) * innerH;
+  const path = ranked
+    .map((item, index) => `${index ? "L" : "M"}${x(index).toFixed(1)},${y(item.value).toFixed(1)}`)
+    .join(" ");
+  const selectedRankIndex = Math.max(
+    ranked.findIndex((item) => item.index === selectedUploadIndex),
+    0
+  );
+  const selectedValue = ranked[selectedRankIndex]?.value || 0;
+  return `
+    <div class="chat-chart">
+      <div class="chat-chart-head">
+        <strong>${escapeHtml(numericColumn)}</strong>
+        <span>${uploadedTable.rows.length} rows</span>
+      </div>
+      <svg viewBox="0 0 ${width} ${height}" role="img" aria-label="Uploaded CSV chart">
+        <rect x="0" y="0" width="${width}" height="${height}" rx="8" fill="#fff"></rect>
+        <path d="${path}" fill="none" stroke="var(--blue)" stroke-width="3"></path>
+        <circle cx="${x(selectedRankIndex).toFixed(1)}" cy="${y(selectedValue).toFixed(1)}" r="6" fill="var(--amber)"><title>Current row ${selectedUploadIndex + 1}: ${selectedValue}</title></circle>
+        <text x="${margin.left}" y="${height - 10}" fill="var(--muted)" font-size="11">row ${ranked[0].index + 1}</text>
+        <text x="${width - margin.right}" y="${height - 10}" fill="var(--muted)" font-size="11" text-anchor="end">row ${ranked[ranked.length - 1].index + 1}</text>
+      </svg>
+      <div class="chat-chart-legend">
+        <span><i class="dot balance"></i>${escapeHtml(numericColumn)}</span>
+        <span><i class="dot trough"></i>Current row</span>
+      </div>
+    </div>
+  `;
 }
 
 function uploadedExtremes(direction) {
