@@ -230,14 +230,12 @@ function openingAnswer(item) {
   const currency = item.profile.home_currency;
   const amount = fmtMoney(item.request.requested_amount, currency);
   const safe = fmtMoney(row.amount_safe_to_pay, currency);
-  const fullDate = row.earliest_date_for_full_payment
-    ? `Full payment date: ${row.earliest_date_for_full_payment}.`
-    : "No safe full-payment date in the forecast.";
-  return [
-    `${requestTitle(item)} (${item.request.request_id})`,
-    `Recommendation: ${conciseRecommendation(row)}.`,
-    `Safe today: ${safe} of ${amount}. ${fullDate}`,
-  ].join("\n\n");
+  const fullDate = row.earliest_date_for_full_payment || "No safe date in forecast";
+  return decisionSummaryMessage(`${requestTitle(item)} (${item.request.request_id})`, [
+    ["recommendation", "Recommendation", conciseRecommendation(row)],
+    ["safe", "Safe today", `${safe} of ${amount}`],
+    ["date", "Full payment date", fullDate],
+  ]);
 }
 
 function renderPromptChips() {
@@ -293,6 +291,8 @@ function appendMessage(role, content) {
   if (role === "assistant" && content && typeof content === "object" && content.html) {
     node.classList.add("rich");
     node.innerHTML = content.html;
+  } else if (role === "assistant") {
+    node.innerHTML = renderAssistantMarkdown(String(content));
   } else {
     node.innerHTML = String(content)
       .split("\n\n")
@@ -377,11 +377,18 @@ function mentionsChart(lower) {
 function directAnswer(item) {
   const row = item.finalDecision;
   const currency = item.profile.home_currency;
-  return [
-    `I would ${plainRecommendation(row)} for ${requestTitle(item)} (${item.request.request_id}).`,
-    `Requested: ${fmtMoney(item.request.requested_amount, currency)}. Safe today: ${fmtMoney(row.amount_safe_to_pay, currency)}. Status: ${humanStatus(row.affordability_status)}.`,
-    shortPlan(row, currency),
-  ].join("\n\n");
+  return decisionSummaryMessage(`${requestTitle(item)} (${item.request.request_id})`, [
+    ["recommendation", "Recommendation", plainRecommendation(row)],
+    ["requested", "Requested", fmtMoney(item.request.requested_amount, currency)],
+    ["safe", "Safe today", fmtMoney(row.amount_safe_to_pay, currency)],
+    ["status", "Status", humanStatus(row.affordability_status)],
+    [
+      "date",
+      "Full payment date",
+      row.earliest_date_for_full_payment || "No safe date in forecast",
+    ],
+    ["plan", "Plan", shortPlan(row, currency)],
+  ]);
 }
 
 function whyAnswer(item) {
@@ -446,6 +453,34 @@ function richAssistantMessage(paragraphs, htmlBlock) {
   return {
     html: paragraphs.map((paragraph) => `<p>${escapeHtml(paragraph)}</p>`).join("") + htmlBlock,
   };
+}
+
+function decisionSummaryMessage(title, rows) {
+  return {
+    html: [
+      `<p class="chat-summary-title">${renderInlineMarkdown(`**${title}**`)}</p>`,
+      `<div class="chat-summary">`,
+      ...rows.map(
+        ([kind, label, value]) => `
+          <div class="chat-summary-row ${kind}">
+            <span class="chat-summary-label">${escapeHtml(label)}</span>
+            <span class="chat-summary-value">${renderInlineMarkdown(String(value))}</span>
+          </div>`
+      ),
+      `</div>`,
+    ].join(""),
+  };
+}
+
+function renderAssistantMarkdown(content) {
+  return content
+    .split("\n\n")
+    .map((paragraph) => `<p>${renderInlineMarkdown(paragraph)}</p>`)
+    .join("");
+}
+
+function renderInlineMarkdown(content) {
+  return escapeHtml(content).replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
 }
 
 function forecastChartHtml(item) {
