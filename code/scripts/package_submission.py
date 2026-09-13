@@ -65,7 +65,14 @@ def verify_layout(target: Path) -> None:
         raise SystemExit(f"archive contains forbidden member(s): {', '.join(sorted(forbidden))}")
 
 
-def verify_run(target: Path, dataset: Path, expected_output: Path, *, no_llm: bool) -> None:
+def verify_run(
+    target: Path,
+    dataset: Path,
+    expected_output: Path,
+    *,
+    no_llm: bool,
+    reuse_cache: bool,
+) -> None:
     with tempfile.TemporaryDirectory(prefix="buy-or-wait-package-") as tmp:
         root = Path(tmp)
         extracted_code = root / "code"
@@ -73,6 +80,9 @@ def verify_run(target: Path, dataset: Path, expected_output: Path, *, no_llm: bo
         with zipfile.ZipFile(target) as archive:
             archive.extractall(extracted_code)
         shutil.copytree(dataset, root / "dataset")
+        cache = REPO_ROOT / ".cache"
+        if reuse_cache and cache.is_dir():
+            shutil.copytree(cache, root / ".cache")
         produced = root / "output.csv"
         command = [
             sys.executable,
@@ -96,12 +106,23 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--expected-output", type=Path, default=REPO_ROOT / "output.csv")
     parser.add_argument("--verify-run", action="store_true", help="extract and reproduce output.csv")
     parser.add_argument("--no-llm", action="store_true", help="use --no-llm during --verify-run")
+    parser.add_argument(
+        "--reuse-cache",
+        action="store_true",
+        help="copy the existing gitignored model cache beside the clean extraction",
+    )
     args = parser.parse_args(argv)
 
     build_archive(args.zip)
     verify_layout(args.zip)
     if args.verify_run:
-        verify_run(args.zip, args.dataset, args.expected_output, no_llm=args.no_llm)
+        verify_run(
+            args.zip,
+            args.dataset,
+            args.expected_output,
+            no_llm=args.no_llm,
+            reuse_cache=args.reuse_cache,
+        )
     print(f"wrote {args.zip}")
     return 0
 

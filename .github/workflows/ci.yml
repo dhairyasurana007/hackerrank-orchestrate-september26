@@ -87,7 +87,7 @@ jobs:
       - name: Verify submission archive layout and reproduction
         env:
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
-        run: python code/scripts/package_submission.py --zip code.zip --verify-run
+        run: python code/scripts/package_submission.py --zip code.zip --verify-run --reuse-cache
       - name: Show the usage report
         run: cat code/evaluation/usage_report.md
       - uses: actions/upload-artifact@v4
