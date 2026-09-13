@@ -56,6 +56,14 @@ class StaticExplorerTest(unittest.TestCase):
         for needle in forbidden:
             self.assertNotIn(needle, combined)
 
+    def test_site_has_chat_input_as_primary_surface(self):
+        html = (ROOT / "site" / "index.html").read_text(encoding="utf-8")
+        script = (ROOT / "site" / "app.js").read_text(encoding="utf-8")
+        self.assertIn('id="chatForm"', html)
+        self.assertIn('id="chatInput"', html)
+        self.assertIn("answerPrompt", script)
+        self.assertIn("appendMessage", script)
+
 
 if __name__ == "__main__":
     unittest.main()

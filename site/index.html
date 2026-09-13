@@ -3,22 +3,22 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Buy or Wait? Decision Explorer</title>
+    <title>Buy or Wait?</title>
     <link rel="stylesheet" href="styles.css" />
   </head>
   <body>
     <header class="topbar">
       <div>
         <p class="eyebrow">HackerRank Orchestrate</p>
-        <h1>Buy or Wait? Decision Explorer</h1>
+        <h1>Buy or Wait?</h1>
       </div>
       <div class="summary-strip" id="summaryStrip"></div>
     </header>
 
-    <main class="shell">
-      <aside class="sidebar">
+    <main class="app-shell">
+      <aside class="request-rail">
         <div class="search-row">
-          <input id="searchInput" type="search" autocomplete="off" placeholder="Search request, user, method" />
+          <input id="searchInput" type="search" autocomplete="off" placeholder="Search requests" />
         </div>
         <div class="filters">
           <select id="statusFilter" aria-label="Filter by affordability status"></select>
@@ -27,104 +27,73 @@
         <div class="request-list" id="requestList"></div>
       </aside>
 
-      <section class="workspace">
-        <section class="decision-band">
+      <section class="chat-panel" aria-label="Buy or Wait chat">
+        <div class="chat-head">
           <div>
             <p class="eyebrow" id="selectedMeta"></p>
-            <h2 id="selectedTitle">Loading decisions...</h2>
-            <p class="decision-text" id="decisionExplanation"></p>
+            <h2 id="selectedTitle">Loading...</h2>
           </div>
+          <button class="icon-button" id="detailsToggle" type="button" title="Toggle details" aria-label="Toggle details">
+            <span>i</span>
+          </button>
+        </div>
+
+        <div class="thread" id="chatThread" aria-live="polite"></div>
+
+        <div class="prompt-chips" id="promptChips"></div>
+
+        <form class="composer" id="chatForm">
+          <input id="chatInput" autocomplete="off" placeholder="Message Buy or Wait" />
+          <button type="submit" title="Send" aria-label="Send">Send</button>
+        </form>
+      </section>
+
+      <aside class="context-panel" id="contextPanel">
+        <section class="decision-card">
+          <p class="eyebrow">Current request</p>
           <dl class="metric-grid" id="metricGrid"></dl>
         </section>
 
-        <section class="analysis-grid">
-          <article class="panel curve-panel">
-            <div class="panel-heading">
-              <div>
-                <p class="eyebrow">Forecast</p>
-                <h3>90-day balance curve</h3>
-              </div>
-              <div class="legend">
-                <span><i class="dot balance"></i>Balance</span>
-                <span><i class="dot floor"></i>Floor</span>
-                <span><i class="dot pay"></i>Plan payments</span>
-              </div>
+        <section class="panel curve-panel">
+          <div class="panel-heading">
+            <h3>Balance forecast</h3>
+            <div class="legend">
+              <span><i class="dot balance"></i>Balance</span>
+              <span><i class="dot floor"></i>Floor</span>
+              <span><i class="dot pay"></i>Payment</span>
             </div>
-            <div class="chart-wrap">
-              <svg id="curveChart" viewBox="0 0 900 320" role="img" aria-label="Forecast balance chart"></svg>
-            </div>
-          </article>
-
-          <article class="panel">
-            <div class="panel-heading">
-              <div>
-                <p class="eyebrow">Decision</p>
-                <h3>Submitted row</h3>
-              </div>
-            </div>
-            <div class="row-details" id="rowDetails"></div>
-          </article>
+          </div>
+          <div class="chart-wrap">
+            <svg id="curveChart" viewBox="0 0 900 320" role="img" aria-label="Forecast balance chart"></svg>
+          </div>
         </section>
 
-        <section class="tabs" aria-label="Decision detail tabs">
-          <button class="tab active" data-tab="candidates">Candidates</button>
-          <button class="tab" data-tab="movements">Cash flow</button>
+        <section class="tabs" aria-label="Detail tabs">
+          <button class="tab active" data-tab="decision">Decision</button>
+          <button class="tab" data-tab="candidates">Plans</button>
           <button class="tab" data-tab="evidence">Evidence</button>
           <button class="tab" data-tab="quality">Quality</button>
         </section>
 
-        <section class="tab-panel active" id="tab-candidates">
-          <div class="split">
-            <article class="panel">
-              <div class="panel-heading"><h3>Considered plans</h3></div>
-              <div class="table-wrap" id="candidateTable"></div>
-            </article>
-            <article class="panel">
-              <div class="panel-heading"><h3>Rejected options</h3></div>
-              <div class="stack-list" id="rejectedList"></div>
-            </article>
-          </div>
+        <section class="tab-panel active" id="tab-decision">
+          <div class="row-details" id="rowDetails"></div>
         </section>
 
-        <section class="tab-panel" id="tab-movements">
-          <div class="split">
-            <article class="panel">
-              <div class="panel-heading"><h3>Explicit movements</h3></div>
-              <div class="table-wrap" id="explicitTable"></div>
-            </article>
-            <article class="panel">
-              <div class="panel-heading"><h3>Projected recurrence</h3></div>
-              <div class="table-wrap" id="projectedTable"></div>
-            </article>
-          </div>
+        <section class="tab-panel" id="tab-candidates">
+          <div class="table-wrap" id="candidateTable"></div>
+          <div class="stack-list" id="rejectedList"></div>
         </section>
 
         <section class="tab-panel" id="tab-evidence">
-          <div class="split">
-            <article class="panel">
-              <div class="panel-heading"><h3>Messages in scope</h3></div>
-              <div class="stack-list" id="messageList"></div>
-            </article>
-            <article class="panel">
-              <div class="panel-heading"><h3>Images and amendments</h3></div>
-              <div class="stack-list" id="imageList"></div>
-            </article>
-          </div>
+          <div class="stack-list" id="messageList"></div>
+          <div class="stack-list" id="imageList"></div>
         </section>
 
         <section class="tab-panel" id="tab-quality">
-          <div class="split">
-            <article class="panel">
-              <div class="panel-heading"><h3>Drawdown sample story</h3></div>
-              <div class="table-wrap" id="drawdownTable"></div>
-            </article>
-            <article class="panel">
-              <div class="panel-heading"><h3>Usage and cost summary</h3></div>
-              <pre class="usage-report" id="usageReport"></pre>
-            </article>
-          </div>
+          <div class="table-wrap" id="drawdownTable"></div>
+          <pre class="usage-report" id="usageReport"></pre>
         </section>
-      </section>
+      </aside>
     </main>
 
     <script src="app.js"></script>
