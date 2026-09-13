@@ -80,6 +80,10 @@ class StaticExplorerTest(unittest.TestCase):
         self.assertIn("answerPrompt", script)
         self.assertIn("parseCsv", script)
         self.assertIn("chartAnswer", script)
+        self.assertIn("chartAxisLabels", script)
+        self.assertIn("chartHoverPoint", script)
+        self.assertIn("chart-axis-label", style)
+        self.assertIn("chart-hit-point", style)
         self.assertIn("answerUploadedPrompt", script)
         self.assertIn("appendMessage", script)
 

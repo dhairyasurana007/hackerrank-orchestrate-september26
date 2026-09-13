@@ -520,7 +520,7 @@ function balanceChartSvg({ curve, floor, trough, payments, currency }) {
   const yMax = max + pad;
   const width = 640;
   const height = 220;
-  const margin = { left: 52, right: 16, top: 14, bottom: 32 };
+  const margin = { left: 68, right: 20, top: 18, bottom: 50 };
   const innerW = width - margin.left - margin.right;
   const innerH = height - margin.top - margin.bottom;
   const x = (index) => margin.left + (innerW * index) / Math.max(curve.length - 1, 1);
@@ -541,18 +541,51 @@ function balanceChartSvg({ curve, floor, trough, payments, currency }) {
       return `<circle cx="${x(index)}" cy="${y(Number(curve[index].balance)).toFixed(1)}" r="5" fill="var(--green)"><title>${escapeHtml(label)}</title></circle>`;
     })
     .join("");
+  const hoverPoints = curve
+    .map((point, index) =>
+      chartHoverPoint({
+        x: x(index),
+        y: y(Number(point.balance)),
+        label: `${point.date}\nBalance: ${fmtMoney(point.balance, currency)}`,
+      })
+    )
+    .join("");
   const troughLabel = `Trough ${trough.date}: ${fmtMoney(trough.balance, currency)}`;
   return `
     <svg viewBox="0 0 ${width} ${height}" role="img" aria-label="Forecast balance chart">
       <rect x="0" y="0" width="${width}" height="${height}" rx="8" fill="#fff"></rect>
+      ${chartAxisLabels({ width, height, margin, xLabel: "Date", yLabel: `Balance (${currency})` })}
       <line x1="${margin.left}" y1="${floorY.toFixed(1)}" x2="${width - margin.right}" y2="${floorY.toFixed(1)}" stroke="var(--red)" stroke-dasharray="7 5"></line>
       <path d="${path}" fill="none" stroke="var(--blue)" stroke-width="3"></path>
+      ${hoverPoints}
       ${paymentDots}
       <circle cx="${x(troughIndex)}" cy="${y(Number(trough.balance)).toFixed(1)}" r="6" fill="var(--amber)"><title>${escapeHtml(troughLabel)}</title></circle>
-      <text x="${margin.left}" y="${height - 10}" fill="var(--muted)" font-size="11">${escapeHtml(curve[0].date)}</text>
-      <text x="${width - margin.right}" y="${height - 10}" fill="var(--muted)" font-size="11" text-anchor="end">${escapeHtml(curve[curve.length - 1].date)}</text>
+      <text x="${margin.left}" y="${height - 28}" fill="var(--muted)" font-size="11">${escapeHtml(curve[0].date)}</text>
+      <text x="${width - margin.right}" y="${height - 28}" fill="var(--muted)" font-size="11" text-anchor="end">${escapeHtml(curve[curve.length - 1].date)}</text>
       <text x="8" y="${Math.max(14, floorY - 6).toFixed(1)}" fill="var(--red)" font-size="11">floor</text>
     </svg>
+  `;
+}
+
+function chartAxisLabels({ width, height, margin, xLabel, yLabel }) {
+  const xAxisY = height - margin.bottom;
+  return `
+    <line class="chart-axis-line" x1="${margin.left}" y1="${xAxisY}" x2="${width - margin.right}" y2="${xAxisY}"></line>
+    <line class="chart-axis-line" x1="${margin.left}" y1="${margin.top}" x2="${margin.left}" y2="${xAxisY}"></line>
+    <text class="chart-axis-label" x="${(margin.left + width - margin.right) / 2}" y="${height - 8}" text-anchor="middle">${escapeHtml(xLabel)}</text>
+    <text class="chart-axis-label" transform="translate(16 ${(margin.top + xAxisY) / 2}) rotate(-90)" text-anchor="middle">${escapeHtml(yLabel)}</text>
+  `;
+}
+
+function chartHoverPoint({ x, y, label }) {
+  const cleanTitle = escapeHtml(label);
+  const cleanAriaLabel = escapeHtml(label.replace(/\s+/g, " "));
+  return `
+    <g class="chart-hover-point" tabindex="0" aria-label="${cleanAriaLabel}">
+      <title>${cleanTitle}</title>
+      <circle class="chart-visible-point" cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="2.4"></circle>
+      <circle class="chart-hit-point" cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="10"></circle>
+    </g>
   `;
 }
 
@@ -719,7 +752,7 @@ function renderChart(item) {
   const yMax = max + pad;
   const width = 900;
   const height = 320;
-  const margin = { left: 58, right: 16, top: 18, bottom: 36 };
+  const margin = { left: 74, right: 20, top: 18, bottom: 56 };
   const innerW = width - margin.left - margin.right;
   const innerH = height - margin.top - margin.bottom;
   const x = (index) => margin.left + (innerW * index) / Math.max(curve.length - 1, 1);
@@ -728,7 +761,7 @@ function renderChart(item) {
     .map((point, index) => `${index ? "L" : "M"}${x(index).toFixed(1)},${y(point.balance).toFixed(1)}`)
     .join(" ");
   const floorY = y(item.floor);
-  const troughIndex = curve.findIndex((point) => point.date === item.trough.date);
+  const troughIndex = Math.max(curve.findIndex((point) => point.date === item.trough.date), 0);
   const paymentDots = payments
     .map((payment) => {
       const index = curve.findIndex((point) => point.date === payment.date);
@@ -736,14 +769,31 @@ function renderChart(item) {
       return `<circle cx="${x(index)}" cy="${y(curve[index].balance)}" r="5" fill="var(--green)"><title>${payment.date}: ${payment.amount}</title></circle>`;
     })
     .join("");
+  const hoverPoints = curve
+    .map((point, index) =>
+      chartHoverPoint({
+        x: x(index),
+        y: y(Number(point.balance)),
+        label: `${point.date}\nBalance: ${fmtMoney(point.balance, item.profile.home_currency)}`,
+      })
+    )
+    .join("");
   svg.innerHTML = `
     <rect x="0" y="0" width="${width}" height="${height}" fill="#fff"></rect>
+    ${chartAxisLabels({
+      width,
+      height,
+      margin,
+      xLabel: "Date",
+      yLabel: `Balance (${item.profile.home_currency})`,
+    })}
     <line x1="${margin.left}" y1="${floorY}" x2="${width - margin.right}" y2="${floorY}" stroke="var(--red)" stroke-dasharray="7 5"></line>
     <path d="${path}" fill="none" stroke="var(--blue)" stroke-width="3"></path>
+    ${hoverPoints}
     <circle cx="${x(troughIndex)}" cy="${y(item.trough.balance)}" r="6" fill="var(--amber)"><title>Trough ${item.trough.date}</title></circle>
     ${paymentDots}
-    <text x="${margin.left}" y="${height - 12}" fill="var(--muted)" font-size="12">${curve[0].date}</text>
-    <text x="${width - margin.right}" y="${height - 12}" fill="var(--muted)" font-size="12" text-anchor="end">${curve[curve.length - 1].date}</text>
+    <text x="${margin.left}" y="${height - 32}" fill="var(--muted)" font-size="12">${curve[0].date}</text>
+    <text x="${width - margin.right}" y="${height - 32}" fill="var(--muted)" font-size="12" text-anchor="end">${curve[curve.length - 1].date}</text>
     <text x="8" y="${floorY - 6}" fill="var(--red)" font-size="12">floor</text>
   `;
 }
@@ -937,18 +987,30 @@ function renderUploadedChart() {
   const yMax = max + pad;
   const width = 900;
   const height = 320;
-  const margin = { left: 58, right: 16, top: 18, bottom: 36 };
+  const margin = { left: 74, right: 20, top: 18, bottom: 56 };
   const innerW = width - margin.left - margin.right;
   const innerH = height - margin.top - margin.bottom;
   const x = (index) => margin.left + (innerW * index) / Math.max(values.length - 1, 1);
   const y = (value) => margin.top + innerH - ((value - yMin) / (yMax - yMin)) * innerH;
   const path = values.map((value, index) => `${index ? "L" : "M"}${x(index).toFixed(1)},${y(value).toFixed(1)}`).join(" ");
   const selectedX = x(selectedUploadIndex);
+  const hoverPoints = values
+    .map((value, index) =>
+      chartHoverPoint({
+        x: x(index),
+        y: y(value),
+        label: `Row ${index + 1}\n${numeric.column}: ${value}`,
+      })
+    )
+    .join("");
   svg.innerHTML = `
     <rect x="0" y="0" width="${width}" height="${height}" fill="#fff"></rect>
+    ${chartAxisLabels({ width, height, margin, xLabel: "CSV row", yLabel: numeric.column })}
     <path d="${path}" fill="none" stroke="var(--blue)" stroke-width="3"></path>
+    ${hoverPoints}
     <circle cx="${selectedX}" cy="${y(values[selectedUploadIndex] || 0)}" r="6" fill="var(--amber)"></circle>
-    <text x="${margin.left}" y="24" fill="var(--muted)" font-size="13">${escapeHtml(numeric.column)}</text>
+    <text x="${margin.left}" y="${height - 32}" fill="var(--muted)" font-size="12">row 1</text>
+    <text x="${width - margin.right}" y="${height - 32}" fill="var(--muted)" font-size="12" text-anchor="end">row ${values.length}</text>
   `;
 }
 
@@ -1047,7 +1109,7 @@ function uploadedChartHtml(numericColumn, ranked) {
   const yMax = max + pad;
   const width = 640;
   const height = 220;
-  const margin = { left: 48, right: 16, top: 14, bottom: 32 };
+  const margin = { left: 68, right: 20, top: 18, bottom: 50 };
   const innerW = width - margin.left - margin.right;
   const innerH = height - margin.top - margin.bottom;
   const x = (index) => margin.left + (innerW * index) / Math.max(values.length - 1, 1);
@@ -1060,6 +1122,15 @@ function uploadedChartHtml(numericColumn, ranked) {
     0
   );
   const selectedValue = ranked[selectedRankIndex]?.value || 0;
+  const hoverPoints = ranked
+    .map((item, index) =>
+      chartHoverPoint({
+        x: x(index),
+        y: y(item.value),
+        label: `Row ${item.index + 1}\n${numericColumn}: ${item.value}\n${uploadedRowTitle(item.row, item.index)}`,
+      })
+    )
+    .join("");
   return `
     <div class="chat-chart">
       <div class="chat-chart-head">
@@ -1068,10 +1139,12 @@ function uploadedChartHtml(numericColumn, ranked) {
       </div>
       <svg viewBox="0 0 ${width} ${height}" role="img" aria-label="Uploaded CSV chart">
         <rect x="0" y="0" width="${width}" height="${height}" rx="8" fill="#fff"></rect>
+        ${chartAxisLabels({ width, height, margin, xLabel: "CSV row", yLabel: numericColumn })}
         <path d="${path}" fill="none" stroke="var(--blue)" stroke-width="3"></path>
+        ${hoverPoints}
         <circle cx="${x(selectedRankIndex).toFixed(1)}" cy="${y(selectedValue).toFixed(1)}" r="6" fill="var(--amber)"><title>Current row ${selectedUploadIndex + 1}: ${selectedValue}</title></circle>
-        <text x="${margin.left}" y="${height - 10}" fill="var(--muted)" font-size="11">row ${ranked[0].index + 1}</text>
-        <text x="${width - margin.right}" y="${height - 10}" fill="var(--muted)" font-size="11" text-anchor="end">row ${ranked[ranked.length - 1].index + 1}</text>
+        <text x="${margin.left}" y="${height - 28}" fill="var(--muted)" font-size="11">row ${ranked[0].index + 1}</text>
+        <text x="${width - margin.right}" y="${height - 28}" fill="var(--muted)" font-size="11" text-anchor="end">row ${ranked[ranked.length - 1].index + 1}</text>
       </svg>
       <div class="chat-chart-legend">
         <span><i class="dot balance"></i>${escapeHtml(numericColumn)}</span>

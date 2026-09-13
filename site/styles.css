@@ -580,6 +580,40 @@ h3 {
   min-height: 210px;
 }
 
+.chart-axis-line {
+  stroke: #d6deea;
+  stroke-width: 1;
+}
+
+.chart-axis-label {
+  fill: #526173;
+  font-size: 12px;
+  font-weight: 750;
+}
+
+.chart-hover-point {
+  outline: none;
+}
+
+.chart-visible-point {
+  fill: #fff;
+  stroke: var(--blue);
+  stroke-width: 1.5;
+  opacity: 0.42;
+}
+
+.chart-hit-point {
+  fill: transparent;
+  cursor: crosshair;
+}
+
+.chart-hover-point:hover .chart-visible-point,
+.chart-hover-point:focus .chart-visible-point {
+  opacity: 1;
+  stroke-width: 3;
+  fill: #dfe9ff;
+}
+
 .chat-chart-legend {
   display: flex;
   flex-wrap: wrap;
