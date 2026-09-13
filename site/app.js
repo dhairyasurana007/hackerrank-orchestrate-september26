@@ -1,5 +1,7 @@
 let bundle;
 let selectedId;
+let uploadedTable = null;
+let selectedUploadIndex = 0;
 
 const moneyFormatters = new Map();
 
@@ -34,6 +36,17 @@ async function boot() {
 }
 
 function renderSummary() {
+  if (uploadedTable) {
+    byId("summaryStrip").innerHTML = [
+      ["Rows", uploadedTable.rows.length],
+      ["Columns", uploadedTable.columns.length],
+      ["Source", "CSV"],
+      ["Mode", "Chat"],
+    ]
+      .map(([label, value]) => `<div class="summary-chip"><span>${label}</span><strong>${value}</strong></div>`)
+      .join("");
+    return;
+  }
   const statuses = bundle.summary.statuses;
   const chips = [
     ["Requests", bundle.metadata.request_count],
@@ -61,6 +74,8 @@ function wireEvents() {
   ["searchInput", "statusFilter", "methodFilter"].forEach((id) => {
     byId(id).addEventListener("input", renderList);
   });
+  byId("csvUpload").addEventListener("change", handleCsvUpload);
+  byId("clearUpload").addEventListener("click", clearUpload);
   byId("chatForm").addEventListener("submit", (event) => {
     event.preventDefault();
     const input = byId("chatInput");
@@ -84,11 +99,20 @@ function wireEvents() {
 }
 
 function selected() {
+  if (uploadedTable) {
+    return uploadedTable.rows[selectedUploadIndex] || null;
+  }
   return bundle.requests.find((item) => item.request.request_id === selectedId);
 }
 
 function filteredRequests() {
   const query = byId("searchInput").value.trim().toLowerCase();
+  if (uploadedTable) {
+    return uploadedTable.rows.filter((row) => {
+      const haystack = uploadedTable.columns.map((column) => row[column]).join(" ").toLowerCase();
+      return !query || haystack.includes(query);
+    });
+  }
   const status = byId("statusFilter").value;
   const method = byId("methodFilter").value;
   return bundle.requests.filter((item) => {
@@ -111,6 +135,29 @@ function filteredRequests() {
 
 function renderList() {
   const items = filteredRequests();
+  if (uploadedTable) {
+    if (!items.includes(uploadedTable.rows[selectedUploadIndex]) && items[0]) {
+      selectedUploadIndex = uploadedTable.rows.indexOf(items[0]);
+    }
+    byId("requestList").innerHTML = items
+      .map((row) => {
+        const index = uploadedTable.rows.indexOf(row);
+        const active = index === selectedUploadIndex ? " active" : "";
+        return `<button class="request-item${active}" data-upload-index="${index}">
+          <strong><span>${escapeHtml(uploadedRowTitle(row, index))}</span><span>${escapeHtml(uploadedRowAmount(row))}</span></strong>
+          <span class="badge">${escapeHtml(uploadedRowSubtitle(row))}</span>
+        </button>`;
+      })
+      .join("");
+    document.querySelectorAll("[data-upload-index]").forEach((button) => {
+      button.addEventListener("click", () => {
+        selectedUploadIndex = Number(button.dataset.uploadIndex);
+        renderList();
+        renderSelected({ resetChat: true });
+      });
+    });
+    return;
+  }
   if (!items.find((item) => item.request.request_id === selectedId) && items[0]) {
     selectedId = items[0].request.request_id;
   }
@@ -135,6 +182,10 @@ function renderList() {
 }
 
 function renderSelected({ resetChat = false } = {}) {
+  if (uploadedTable) {
+    renderUploadedSelected({ resetChat });
+    return;
+  }
   const item = selected();
   const row = item.finalDecision;
   const currency = item.profile.home_currency;
@@ -177,7 +228,9 @@ function openingAnswer(item) {
 }
 
 function renderPromptChips() {
-  const chips = ["Why?", "What is the payment plan?", "What could make it affordable?", "Show not affordable cases"];
+  const chips = uploadedTable
+    ? ["Summarize this row", "What columns are in this CSV?", "Find expensive rows", "Show row 5"]
+    : ["Why?", "What is the payment plan?", "What could make it affordable?", "Show not affordable cases"];
   byId("promptChips").innerHTML = chips
     .map((chip) => `<button type="button" class="prompt-chip">${chip}</button>`)
     .join("");
@@ -201,6 +254,9 @@ function appendMessage(role, content) {
 }
 
 function answerPrompt(prompt) {
+  if (uploadedTable) {
+    return answerUploadedPrompt(prompt);
+  }
   const lower = prompt.toLowerCase();
   const explicit = findRequest(prompt);
   if (explicit && explicit.request.request_id !== selectedId) {
@@ -517,6 +573,299 @@ function renderQuality() {
     ])
   );
   byId("usageReport").textContent = bundle.usageReportMarkdown || "No usage report found in this checkout.";
+}
+
+function handleCsvUpload(event) {
+  const file = event.target.files && event.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = () => {
+    try {
+      uploadedTable = parseCsv(String(reader.result || ""), file.name);
+      selectedUploadIndex = 0;
+      byId("sourceHint").textContent = `${file.name}: ${uploadedTable.rows.length} row(s), ${uploadedTable.columns.length} column(s).`;
+      byId("clearUpload").hidden = false;
+      byId("statusFilter").disabled = true;
+      byId("methodFilter").disabled = true;
+      byId("searchInput").value = "";
+      renderSummary();
+      renderList();
+      renderSelected({ resetChat: true });
+    } catch (error) {
+      uploadedTable = null;
+      byId("sourceHint").textContent = `Could not read CSV: ${error.message}`;
+      byId("clearUpload").hidden = true;
+      renderSummary();
+      renderList();
+      renderSelected({ resetChat: true });
+    }
+  };
+  reader.readAsText(file);
+}
+
+function clearUpload() {
+  uploadedTable = null;
+  selectedUploadIndex = 0;
+  byId("csvUpload").value = "";
+  byId("sourceHint").textContent = "Using the built-in Buy-or-Wait decisions.";
+  byId("clearUpload").hidden = true;
+  byId("statusFilter").disabled = false;
+  byId("methodFilter").disabled = false;
+  renderSummary();
+  renderList();
+  renderSelected({ resetChat: true });
+}
+
+function parseCsv(source, name) {
+  const rows = [];
+  let current = [];
+  let field = "";
+  let quoted = false;
+  for (let index = 0; index < source.length; index += 1) {
+    const char = source[index];
+    const next = source[index + 1];
+    if (quoted) {
+      if (char === '"' && next === '"') {
+        field += '"';
+        index += 1;
+      } else if (char === '"') {
+        quoted = false;
+      } else {
+        field += char;
+      }
+    } else if (char === '"') {
+      quoted = true;
+    } else if (char === ",") {
+      current.push(field);
+      field = "";
+    } else if (char === "\n") {
+      current.push(field);
+      rows.push(current);
+      current = [];
+      field = "";
+    } else if (char !== "\r") {
+      field += char;
+    }
+  }
+  current.push(field);
+  rows.push(current);
+  const nonEmpty = rows.filter((row) => row.some((cell) => cell.trim() !== ""));
+  if (nonEmpty.length < 2) {
+    throw new Error("expected a header row and at least one data row");
+  }
+  const columns = nonEmpty[0].map((column, index) => column.trim() || `column_${index + 1}`);
+  const dataRows = nonEmpty.slice(1).map((row, rowIndex) => {
+    const item = { __rowNumber: rowIndex + 1 };
+    columns.forEach((column, columnIndex) => {
+      item[column] = (row[columnIndex] || "").trim();
+    });
+    return item;
+  });
+  return { name, columns, rows: dataRows };
+}
+
+function renderUploadedSelected({ resetChat = false } = {}) {
+  const row = selected();
+  const title = uploadedRowTitle(row, selectedUploadIndex);
+  byId("selectedMeta").textContent = `${uploadedTable.name} · row ${selectedUploadIndex + 1}`;
+  byId("selectedTitle").innerHTML = `${escapeHtml(title)} <span class="badge">CSV row</span>`;
+  byId("metricGrid").innerHTML = uploadedTable.columns
+    .slice(0, 4)
+    .map((column) => `<div><dt>${escapeHtml(column)}</dt><dd>${escapeHtml(text(row[column]))}</dd></div>`)
+    .join("");
+  renderPromptChips();
+  byId("rowDetails").innerHTML = uploadedTable.columns
+    .map((column) => `<div class="detail-line"><span>${escapeHtml(column)}</span><strong>${escapeHtml(text(row[column]))}</strong></div>`)
+    .join("");
+  renderUploadedChart();
+  byId("candidateTable").innerHTML = table(["column", "value"], uploadedTable.columns.map((column) => [column, row[column]]));
+  byId("rejectedList").innerHTML = empty("Upload mode shows raw row fields instead of Buy-or-Wait candidate plans.");
+  byId("messageList").innerHTML = stack("Loaded CSV", `${uploadedTable.name} is being analyzed locally in this browser.`);
+  byId("imageList").innerHTML = empty("CSV upload mode does not process image files.");
+  byId("drawdownTable").innerHTML = table(
+    ["row", "preview"],
+    uploadedTable.rows.slice(0, 12).map((item, index) => [index + 1, uploadedRowCompact(item)])
+  );
+  byId("usageReport").textContent = "CSV upload mode is local-only: no server upload, no model calls, no token usage.";
+  if (resetChat) {
+    byId("chatThread").innerHTML = "";
+    appendMessage("assistant", openingUploadedAnswer(row));
+  }
+}
+
+function renderUploadedChart() {
+  const numeric = uploadedTable.columns
+    .map((column) => ({ column, values: uploadedTable.rows.map((row) => parseLooseNumber(row[column])).filter((value) => value !== null) }))
+    .filter((item) => item.values.length >= 2)[0];
+  const svg = byId("curveChart");
+  if (!numeric) {
+    svg.innerHTML = `<rect x="0" y="0" width="900" height="320" fill="#fff"></rect><text x="32" y="160" fill="var(--muted)" font-size="18">No numeric column to chart.</text>`;
+    return;
+  }
+  const values = uploadedTable.rows.map((row) => parseLooseNumber(row[numeric.column]) || 0);
+  const min = Math.min(...values);
+  const max = Math.max(...values);
+  const pad = Math.max((max - min) * 0.08, 1);
+  const yMin = min - pad;
+  const yMax = max + pad;
+  const width = 900;
+  const height = 320;
+  const margin = { left: 58, right: 16, top: 18, bottom: 36 };
+  const innerW = width - margin.left - margin.right;
+  const innerH = height - margin.top - margin.bottom;
+  const x = (index) => margin.left + (innerW * index) / Math.max(values.length - 1, 1);
+  const y = (value) => margin.top + innerH - ((value - yMin) / (yMax - yMin)) * innerH;
+  const path = values.map((value, index) => `${index ? "L" : "M"}${x(index).toFixed(1)},${y(value).toFixed(1)}`).join(" ");
+  const selectedX = x(selectedUploadIndex);
+  svg.innerHTML = `
+    <rect x="0" y="0" width="${width}" height="${height}" fill="#fff"></rect>
+    <path d="${path}" fill="none" stroke="var(--blue)" stroke-width="3"></path>
+    <circle cx="${selectedX}" cy="${y(values[selectedUploadIndex] || 0)}" r="6" fill="var(--amber)"></circle>
+    <text x="${margin.left}" y="24" fill="var(--muted)" font-size="13">${escapeHtml(numeric.column)}</text>
+  `;
+}
+
+function openingUploadedAnswer(row) {
+  return [
+    `I loaded ${uploadedTable.name}. You can ask about any row or column in the CSV.`,
+    `Right now I am looking at row ${selectedUploadIndex + 1}: ${uploadedRowCompact(row)}.`,
+    "Try: “summarize this row”, “show row 5”, “what columns are available?”, or “find expensive rows”.",
+  ].join("\n\n");
+}
+
+function answerUploadedPrompt(prompt) {
+  const lower = prompt.toLowerCase();
+  const rowMatch = lower.match(/\brow\s+(\d+)\b/);
+  if (rowMatch) {
+    const wanted = Number(rowMatch[1]) - 1;
+    if (wanted >= 0 && wanted < uploadedTable.rows.length) {
+      selectedUploadIndex = wanted;
+      renderList();
+      renderSelected();
+      return `Switched to row ${wanted + 1}.\n\n${uploadedRowNarrative(uploadedTable.rows[wanted])}`;
+    }
+    return `I only have ${uploadedTable.rows.length} row(s), so row ${wanted + 1} is outside this CSV.`;
+  }
+  const foundByValue = findUploadedRow(prompt);
+  if (foundByValue !== null && foundByValue !== selectedUploadIndex) {
+    selectedUploadIndex = foundByValue;
+    renderList();
+    renderSelected();
+    return `I found that in row ${foundByValue + 1}.\n\n${uploadedRowNarrative(uploadedTable.rows[foundByValue])}`;
+  }
+  if (/column|schema|field|header/.test(lower)) {
+    return `This CSV has ${uploadedTable.columns.length} column(s):\n\n${uploadedTable.columns.join(", ")}`;
+  }
+  if (/summary|overview|how many|dataset/.test(lower)) {
+    return uploadedDatasetSummary();
+  }
+  if (/expensive|highest|largest|biggest|costliest/.test(lower)) {
+    return uploadedExtremes("desc");
+  }
+  if (/cheap|lowest|smallest/.test(lower)) {
+    return uploadedExtremes("asc");
+  }
+  if (/recommend|buy|decision|afford|should/.test(lower)) {
+    return uploadedRecommendationLikeAnswer(selected());
+  }
+  return uploadedRowNarrative(selected());
+}
+
+function uploadedDatasetSummary() {
+  const numericColumns = uploadedTable.columns.filter((column) =>
+    uploadedTable.rows.some((row) => parseLooseNumber(row[column]) !== null)
+  );
+  return [
+    `${uploadedTable.name} has ${uploadedTable.rows.length} row(s) and ${uploadedTable.columns.length} column(s).`,
+    numericColumns.length ? `Numeric-looking columns: ${numericColumns.join(", ")}.` : "I did not detect numeric columns.",
+    `Current row: ${uploadedRowCompact(selected())}.`,
+  ].join("\n\n");
+}
+
+function uploadedExtremes(direction) {
+  const numericColumn = uploadedBestNumericColumn();
+  if (!numericColumn) {
+    return "I need a numeric amount/price/cost column to rank rows, and I do not see one in this CSV.";
+  }
+  const ranked = uploadedTable.rows
+    .map((row, index) => ({ row, index, value: parseLooseNumber(row[numericColumn]) }))
+    .filter((item) => item.value !== null)
+    .sort((a, b) => (direction === "asc" ? a.value - b.value : b.value - a.value))
+    .slice(0, 5);
+  return [
+    `Using ${numericColumn}, the ${direction === "asc" ? "lowest" : "highest"} rows are:`,
+    ranked.map((item) => `row ${item.index + 1}: ${item.value} · ${uploadedRowCompact(item.row)}`).join("\n"),
+  ].join("\n\n");
+}
+
+function uploadedRecommendationLikeAnswer(row) {
+  const columns = uploadedTable.columns;
+  const statusColumn = columns.find((column) => /status|afford|recommend|decision/i.test(column));
+  const amountColumn = uploadedBestNumericColumn();
+  const pieces = [];
+  if (statusColumn) pieces.push(`${statusColumn}: ${row[statusColumn] || "blank"}`);
+  if (amountColumn) pieces.push(`${amountColumn}: ${row[amountColumn] || "blank"}`);
+  return pieces.length
+    ? `For this uploaded row, the closest decision fields I can infer are:\n\n${pieces.join("\n")}\n\nThis is a local CSV chat view, so I am not recomputing financial affordability unless the CSV already includes those fields.`
+    : `I can explain the row, but this uploaded CSV does not include obvious decision or amount fields. Current row: ${uploadedRowCompact(row)}.`;
+}
+
+function uploadedRowNarrative(row) {
+  const fields = uploadedTable.columns
+    .filter((column) => row[column] !== "")
+    .slice(0, 10)
+    .map((column) => `${column}: ${row[column]}`);
+  return `Row ${selectedUploadIndex + 1} says:\n\n${fields.join("\n") || "No populated fields in this row."}`;
+}
+
+function uploadedRowTitle(row, index) {
+  const idColumn = uploadedTable.columns.find((column) => /(^id$|_id$|request|product|item|name|title)/i.test(column));
+  return idColumn && row[idColumn] ? row[idColumn] : `Row ${index + 1}`;
+}
+
+function uploadedRowAmount(row) {
+  const column = uploadedBestNumericColumn();
+  return column && row[column] ? row[column] : "";
+}
+
+function uploadedRowSubtitle(row) {
+  const preview = uploadedTable.columns
+    .filter((column) => row[column] && row[column] !== uploadedRowTitle(row, row.__rowNumber - 1))
+    .slice(0, 2)
+    .map((column) => `${column}: ${row[column]}`)
+    .join(" · ");
+  return preview || "CSV row";
+}
+
+function uploadedRowCompact(row) {
+  return uploadedTable.columns
+    .filter((column) => row[column])
+    .slice(0, 4)
+    .map((column) => `${column}=${row[column]}`)
+    .join(", ");
+}
+
+function uploadedBestNumericColumn() {
+  return (
+    uploadedTable.columns.find((column) => /amount|price|cost|total|value|payment|balance/i.test(column) && uploadedTable.rows.some((row) => parseLooseNumber(row[column]) !== null)) ||
+    uploadedTable.columns.find((column) => uploadedTable.rows.some((row) => parseLooseNumber(row[column]) !== null))
+  );
+}
+
+function findUploadedRow(prompt) {
+  const lower = prompt.toLowerCase();
+  if (lower.length < 3) return null;
+  const index = uploadedTable.rows.findIndex((row) =>
+    uploadedTable.columns.some((column) => String(row[column] || "").toLowerCase().includes(lower))
+  );
+  return index >= 0 ? index : null;
+}
+
+function parseLooseNumber(value) {
+  const cleaned = String(value || "").replace(/[^0-9.-]/g, "");
+  if (!cleaned || cleaned === "-" || cleaned === "." || cleaned === "-.") return null;
+  const number = Number(cleaned);
+  return Number.isFinite(number) ? number : null;
 }
 
 function table(headers, rows) {

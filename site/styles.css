@@ -140,6 +140,49 @@ h3 {
   margin-top: 8px;
 }
 
+.upload-card {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  padding: 11px;
+  margin-top: 10px;
+}
+
+.upload-card input[type="file"] {
+  position: absolute;
+  inline-size: 1px;
+  block-size: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.file-button,
+.upload-card button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 34px;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: #f8fafc;
+  color: var(--ink);
+  cursor: pointer;
+  font: inherit;
+  font-weight: 700;
+  padding: 7px 10px;
+  margin-top: 8px;
+}
+
+.upload-card button {
+  width: 100%;
+}
+
+.upload-card p:not(.eyebrow) {
+  color: var(--muted);
+  font-size: 12px;
+  margin-top: 8px;
+}
+
 .request-list {
   display: grid;
   gap: 8px;

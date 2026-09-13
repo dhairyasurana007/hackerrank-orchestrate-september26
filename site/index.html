@@ -24,6 +24,13 @@
           <select id="statusFilter" aria-label="Filter by affordability status"></select>
           <select id="methodFilter" aria-label="Filter by payment method"></select>
         </div>
+        <section class="upload-card">
+          <p class="eyebrow">Ask your own CSV</p>
+          <label class="file-button" for="csvUpload">Choose CSV</label>
+          <input id="csvUpload" type="file" accept=".csv,text/csv" />
+          <p id="sourceHint">Using the built-in Buy-or-Wait decisions.</p>
+          <button id="clearUpload" type="button" hidden>Back to built-in data</button>
+        </section>
         <div class="request-list" id="requestList"></div>
       </aside>
 

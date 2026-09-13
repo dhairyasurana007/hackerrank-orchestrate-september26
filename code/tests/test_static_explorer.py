@@ -61,7 +61,10 @@ class StaticExplorerTest(unittest.TestCase):
         script = (ROOT / "site" / "app.js").read_text(encoding="utf-8")
         self.assertIn('id="chatForm"', html)
         self.assertIn('id="chatInput"', html)
+        self.assertIn('id="csvUpload"', html)
         self.assertIn("answerPrompt", script)
+        self.assertIn("parseCsv", script)
+        self.assertIn("answerUploadedPrompt", script)
         self.assertIn("appendMessage", script)
 
 
