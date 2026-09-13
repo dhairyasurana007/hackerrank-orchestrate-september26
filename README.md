@@ -16,6 +16,12 @@ A recommendation is safe only if the user can complete the full payment plan, co
 
 Read [`problem_statement.md`](./problem_statement.md) for the full task spec, input/output schema, allowed values, conflict-resolution rules, and submission format.
 
+## Demo Website
+
+Static demo: <https://dhairyasurana007.github.io/hackerrank-orchestrate-september26/>
+
+The website is a precomputed explorer for the generated decisions. The graded submission remains the terminal-runnable solution in `code.zip` plus the root-level `output.csv`.
+
 ---
 
 ## Quick Start

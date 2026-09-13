@@ -2,6 +2,12 @@
 
 Terminal solution for the HackerRank Orchestrate "Buy or Wait?" challenge.
 
+## Demo Website
+
+Static demo: <https://dhairyasurana007.github.io/hackerrank-orchestrate-september26/>
+
+The website is a precomputed explorer for the generated decisions. The graded submission remains this terminal-runnable package plus the submitted `output.csv`.
+
 ## Requirements
 
 - Python 3.13, standard library only.
